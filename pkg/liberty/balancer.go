@@ -8,7 +8,8 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/kavu/go_reuseport"
+	"github.com/facebookgo/grace/gracehttp"
+	"github.com/facebookgo/grace/gracenet"
 )
 
 type strategy int
@@ -20,56 +21,55 @@ const (
 
 type Balancer struct {
 	*sync.Mutex
-	Addr     string
 	Errors   chan error
 	listener net.Listener
 	proxies  []*httputil.ReverseProxy
 	servers  []*server
 }
 
-func NewBalancer(addr string, proxies []*httputil.ReverseProxy) *Balancer {
+func NewBalancer() *Balancer {
 	b := &Balancer{
-		Addr:    addr,
 		Errors:  make(chan error),
-		proxies: proxies,
-		servers: make([]*server, len(proxies), len(proxies)),
+		servers: make([]*server, 0),
 	}
-	for i, proxy := range b.proxies {
-		b.servers[i] = &server{0, &http.Server{Handler: proxy}}
-		b.servers[i].ConnState = b.servers[i].trackState
+
+	for _, proxy := range conf.Proxies {
+		servers, err := proxy.configure()
+		if err != nil {
+			panic(err)
+		}
+		for i, s := range servers {
+			b.servers = append(b.servers, &server{0, s})
+			b.servers[i].s.ConnState = b.servers[i].trackState
+		}
 	}
 	return b
 }
 
 // Balance incoming requests between a set of configured reverse proxies using
 // the desired balancing strategy.
-func (b *Balancer) Balance(strat strategy) (ready chan struct{}) {
-	ready = make(chan struct{})
+func (b *Balancer) Balance(strat strategy) {
 	switch strat {
 	case BestEffort:
-		go b.bestEffort(ready)
+		b.bestEffort()
 	}
-	return ready
+}
+
+func (b *Balancer) Servers() []*http.Server {
+	servers := make([]*http.Server, len(b.servers), len(b.servers))
+	for i, s := range b.servers {
+		servers[i] = s.s
+	}
+	return servers
 }
 
 // the bestEffort balancer leaves all the heavy lifting to the kernel, using the
 // 3.9+ SO_REUSEPORT socket configuration.
-func (b *Balancer) bestEffort(ready chan struct{}) {
-	for _, s := range b.servers {
-		listener, err := reuseport.NewReusablePortListener("tcp4", b.Addr)
-		if err != nil {
-			panic(err)
-		}
-		go s.Serve(listener)
-	}
-
-	ready <- struct{}{}
-
-	for {
-		select {
-		case err := <-b.Errors:
-			fmt.Println(err)
-		}
+func (b *Balancer) bestEffort() {
+	gracenet.Flags = gracenet.FlagReusePort
+	err := gracehttp.Serve(b.Servers()...)
+	if err != nil {
+		fmt.Println(err)
 	}
 }
 
@@ -80,10 +80,12 @@ func leastUsedHandler(b *Balancer) http.Handler {
 }
 
 func (b *Balancer) leastUsedHandler() http.Handler {
+	var h http.Handler
 	b.Lock()
 	sort.Sort(b)
+	h = b.servers[0].s.Handler
 	b.Unlock()
-	return b.servers[0].Handler
+	return h
 }
 
 func (b *Balancer) Len() int {
