@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/coreos/go-systemd/activation"
-	"github.com/golang/glog"
 )
 
 const (
@@ -31,7 +30,7 @@ func serveSocketListener(srv, secureSrv *http.Server) error {
 	// a goroutine.
 	ln := listeners[0]
 	go func() {
-		glog.Fatal(srv.Serve(ln))
+		fmt.Println(srv.Serve(ln))
 	}()
 
 	lnSecure := listeners[1]

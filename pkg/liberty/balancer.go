@@ -1,7 +1,6 @@
 package liberty
 
 import (
-	"fmt"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/facebookgo/grace/gracehttp"
 	"github.com/facebookgo/grace/gracenet"
+	"github.com/golang/glog"
 )
 
 type strategy int
@@ -48,10 +48,11 @@ func NewBalancer() *Balancer {
 
 // Balance incoming requests between a set of configured reverse proxies using
 // the desired balancing strategy.
-func (b *Balancer) Balance(strat strategy) {
+func (b *Balancer) Balance(strat strategy) error {
 	switch strat {
-	case BestEffort:
-		b.bestEffort()
+	default:
+		return b.bestEffort()
+
 	}
 }
 
@@ -65,12 +66,13 @@ func (b *Balancer) Servers() []*http.Server {
 
 // the bestEffort balancer leaves all the heavy lifting to the kernel, using the
 // 3.9+ SO_REUSEPORT socket configuration.
-func (b *Balancer) bestEffort() {
+func (b *Balancer) bestEffort() error {
 	gracenet.Flags = gracenet.FlagReusePort
-	err := gracehttp.Serve(b.Servers()...)
-	if err != nil {
-		fmt.Println(err)
+	servers := b.Servers()
+	for _, s := range servers {
+		glog.Infof("%#v", s.Handler)
 	}
+	return gracehttp.Serve(b.Servers()...)
 }
 
 func leastUsedHandler(b *Balancer) http.Handler {

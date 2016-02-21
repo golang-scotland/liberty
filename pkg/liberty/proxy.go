@@ -9,24 +9,24 @@ import (
 	"strings"
 
 	"github.com/gnanderson/trie"
-	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
 // Proxy defines the configuration of a reverse proxy entry in the router.
 type Proxy struct {
-	HostPath    string `yaml:"hostPath"`
-	RemoteHost  string `yaml:"remoteHost"`
-	rHostIPs    []net.IP
-	HostAlias   []string `yaml:"hostAlias"`
-	HostIP      string   `yaml:"hostIP"`
-	HostPort    int      `yaml:"hostPort"`
-	Tls         bool     `yaml:"tls"`
-	TlsRedirect bool     `yaml:"tlsRedirect"`
-	Ws          bool     `yaml:"ws"`
-	HandlerType string   `yaml:"handlerType"`
-	IPs         []string `yaml:"ips, flow"`
-	Cors        []string `yaml:"cors, flow"`
+	HostPath      string `yaml:"hostPath"`
+	RemoteHost    string `yaml:"remoteHost"`
+	remoteHostURL *url.URL
+	remoteHostIPs []net.IP
+	HostAlias     []string `yaml:"hostAlias"`
+	HostIP        string   `yaml:"hostIP"`
+	HostPort      int      `yaml:"hostPort"`
+	Tls           bool     `yaml:"tls"`
+	TlsRedirect   bool     `yaml:"tlsRedirect"`
+	Ws            bool     `yaml:"ws"`
+	HandlerType   string   `yaml:"handlerType"`
+	IPs           []string `yaml:"ips, flow"`
+	Cors          []string `yaml:"cors, flow"`
 }
 
 var muxers map[int]*http.ServeMux
@@ -45,11 +45,6 @@ func getMux(port int) *http.ServeMux {
 // Configure a proxy for use with the paramaters from the parsed yaml config. If
 // a remote host resolves to more than one IP address, we'll create a server and
 // for each. This works because under the hood we're using SO_REUSEPORT.
-//
-// It's important to note at the moment there's nothing to stop you serving
-// different back ends from the same 'hostpath'. This will lead to unpredictable
-// results so please ensure you only use identical backends for each proxy
-// entry/hostpath
 func (p *Proxy) configure() ([]*http.Server, error) {
 	var servers []*http.Server
 
@@ -61,18 +56,53 @@ func (p *Proxy) configure() ([]*http.Server, error) {
 		p.HostPort = 443
 	}
 
-	if p.HostIP == "" {
-		p.HostIP = "0.0.0.0"
+	if !strings.HasPrefix(p.RemoteHost, "http") {
+		var scheme string
+		if p.Tls {
+			scheme = "https://"
+		} else {
+			scheme = "http://"
+		}
+		p.RemoteHost = fmt.Sprintf("%s%s", scheme, p.RemoteHost)
 	}
 
-	// lookup the backend host and create a server/mux combination for each
-	// resolved IP address if this remote host is not a valid resource we can't
-	// continue.
 	// TODO skip this proxy if error here?
 	remote, err := url.Parse(p.RemoteHost)
 	if err != nil {
 		panic(fmt.Sprintf("Invalid proxy host: %s", err))
 	}
+	p.remoteHostURL = remote
+
+	// to support load balancing we're going to be creating multiple servers
+	// in this scenario we'll need a slice of ip strings and we'll also be
+	// explicit about the remote port.
+	chunks := strings.Split(remote.Host, ":")
+	var hostName string
+	if len(chunks) > 1 {
+		hostName = chunks[0]
+	} else {
+		hostName = remote.Host
+
+		// add the port - we'll need it to assemble remote URL based on ip
+		var port int
+		if p.Tls {
+			port = 443
+		} else {
+			port = 80
+		}
+		remote.Host = fmt.Sprintf("%s:%d", remote.Host, port)
+	}
+	ips, err := net.LookupIP(hostName)
+	if err != nil {
+		return nil, err
+	}
+	p.remoteHostIPs = ips
+
+	if p.HostIP == "" {
+		p.HostIP = "0.0.0.0"
+	}
+
+	fmt.Printf("Configuring proxy: %#v\n", p)
 
 	// add an additional redirect from port 80
 	if p.TlsRedirect && p.HostPort == 443 {
@@ -85,17 +115,7 @@ func (p *Proxy) configure() ([]*http.Server, error) {
 		servers = append(servers, s)
 	}
 
-	chunks := strings.Split(remote.Host, ":")
-	var hostName string
-	if len(chunks) > 1 {
-		hostName = chunks[0]
-	} else {
-		hostName = remote.Host
-	}
-	ips, err := net.LookupIP(hostName)
-	if err != nil {
-		return nil, err
-	}
+	fmt.Printf("IP's for proxy backend: %#v\n", ips)
 
 	// now the server (or servers) for this proxy entry
 	for _, ip := range ips {
@@ -118,13 +138,15 @@ func (p *Proxy) configure() ([]*http.Server, error) {
 		}
 
 		// now configure the reverse proxy
-		/*m, ok := s.Handler.(*http.ServeMux)
-		if !ok {
-			return nil, fmt.Errorf("cannot configure reverse proxy for '%s'", p.HostPath)
+		_, port, err := net.SplitHostPort(remote.Host)
+		if err != nil {
+			return nil, err
 		}
-		*/
-		reverseProxy(p, mux, strings.Replace(p.RemoteHost, remote.Host, ip.String(), 1))
+		remoteShard := strings.Replace(p.RemoteHost, remote.Host, fmt.Sprintf("%s:%s", ip.String(), port), 1)
+		fmt.Printf("remote shard url: %s\n", remoteShard)
+		reverseProxy(p, mux, remoteShard)
 
+		s.Handler = mux
 		servers = append(servers, s)
 	}
 
@@ -138,9 +160,10 @@ func reverseProxy(p *Proxy, mux *http.ServeMux, remoteUrl string) {
 	// if this remote host is not a valid resource we can't continue
 	remote, err := url.Parse(remoteUrl)
 	if err != nil {
-		glog.Fatalf("Invalid proxy host: %s", err)
 		panic(err)
 	}
+
+	fmt.Printf("reverse proxying to: %#v\n", remote)
 
 	// the first handler should be a prometheus instrumented handler
 	handlers := make([]Chainable, 0)
@@ -207,7 +230,6 @@ func ips2nets(ips []string) []*net.IPNet {
 	for _, ipRange := range ips {
 		_, ipNet, err := net.ParseCIDR(ipRange)
 		if err != nil {
-			glog.Fatalf("Invalid proxy host: %s", err)
 			panic(err)
 		}
 		nets = append(nets, ipNet)

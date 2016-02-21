@@ -2,12 +2,12 @@ package liberty
 
 import (
 	"crypto/tls"
+	"fmt"
 	"net/http"
 	"os"
 	"runtime"
 
 	"github.com/gnanderson/trie"
-	"github.com/golang/glog"
 	"github.com/spf13/viper"
 )
 
@@ -41,7 +41,7 @@ func loadConfig() *Config {
 	v.AddConfigPath(configLocation)
 	err := v.ReadInConfig()
 	if err != nil {
-		glog.Fatal(err)
+		fmt.Printf("Fatal error reading libertry config: %s\n", err)
 	}
 	v.Unmarshal(cfg)
 	return cfg

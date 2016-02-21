@@ -10,7 +10,6 @@ import (
 
 	"github.com/NYTimes/gziphandler"
 	"github.com/gnanderson/trie"
-	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.scot/pkg/env"
 )
@@ -84,7 +83,6 @@ func (rh *IPRestrictedHandler) Chain(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ip, err := parseForwarderIP(r, appEnv)
 		if err != nil {
-			glog.Errorln(err)
 			http.Error(w, err.Error(), 500)
 			return
 		}
@@ -104,18 +102,12 @@ func (rh *IPRestrictedHandler) Chain(h http.Handler) http.Handler {
 		// 1. Open paths are allowed
 		// 2. If the path is not open but the IP is allowed, proceed
 		if rh.handlerType == apiHandler && rh.openPaths.LongestPrefix(r.URL.String()) != "" {
-			if glog.V(3) {
-				glog.Infof("Open API: %s - %s%s", ip, r.Host, r.URL.String())
-			}
 			h.ServeHTTP(w, r)
 			return
 		}
 
 		for _, ipNet := range rh.Allowed {
 			if ipNet.Contains(ip) {
-				if glog.V(3) {
-					glog.Infof("API IP Access: %s - %s%s", ip, r.Host, r.URL.String())
-				}
 				h.ServeHTTP(w, r)
 				return
 			}
@@ -132,9 +124,6 @@ func (rh *IPRestrictedHandler) Chain(h http.Handler) http.Handler {
 				return
 			}
 		}
-
-		glog.Infof("Blocked: %s - %s%s", ip, r.Host, r.URL.String())
-		glog.Infof("Referrer: %s", r.Header.Get("Referer"))
 
 		http.Error(w, fmt.Sprintf("IP %s is not allowed...", ip), 403)
 	})
@@ -171,9 +160,6 @@ func parseForwarderIP(r *http.Request, appEnv env.Env) (ip net.IP, err error) {
 func ValidIPNSource(ip net.IP) bool {
 	if names, err := net.LookupAddr(ip.String()); err == nil {
 		for _, name := range names {
-			if glog.V(1) {
-				glog.Infof("IP Reverse Name: %s", name)
-			}
 			if strings.HasSuffix(name, "paypal.com.") {
 				return true
 			}
@@ -220,15 +206,11 @@ func (a *apiWhitelist) hasHost(ip net.IP) bool {
 	}
 	names, err := net.LookupAddr(ip.String())
 	if err != nil {
-		glog.Warningf("Reverse IP lookup error: %s", err)
 		return false
 	}
 
 	for _, host := range a.hosts {
 		for _, name := range names {
-			if glog.V(1) {
-				glog.Infof("IP reverse name check - name: %s, host: %s", name, host)
-			}
 			if strings.HasSuffix(name, host) {
 				return true
 			}
@@ -273,8 +255,6 @@ func (ah *ApiHandler) Chain(h http.Handler) http.Handler {
 						h.ServeHTTP(w, r)
 						return
 					}
-					glog.Infof("Blocked: %s - %s%s", remoteIP, r.Host, r.URL.String())
-					glog.Infof("Referrer: %s", r.Header.Get("Referer"))
 				}
 			}
 		}
