@@ -1,6 +1,7 @@
 package liberty
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -36,7 +37,8 @@ func NewBalancer() *Balancer {
 	for _, proxy := range conf.Proxies {
 		servers, err := proxy.configure()
 		if err != nil {
-			panic(err)
+			fmt.Printf("the proxy for '%s' was not configured - %s", proxy.HostPath, err)
+			continue
 		}
 		for i, s := range servers {
 			b.servers = append(b.servers, &server{0, s})

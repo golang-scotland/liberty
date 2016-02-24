@@ -69,7 +69,8 @@ func (p *Proxy) configure() ([]*http.Server, error) {
 	// TODO skip this proxy if error here?
 	remote, err := url.Parse(p.RemoteHost)
 	if err != nil {
-		panic(fmt.Sprintf("Invalid proxy host: %s", err))
+		fmt.Printf("remote host URL could not be parsed - %s", err)
+		return nil, err
 	}
 	p.remoteHostURL = remote
 
@@ -144,7 +145,10 @@ func (p *Proxy) configure() ([]*http.Server, error) {
 		}
 		remoteShard := strings.Replace(p.RemoteHost, remote.Host, fmt.Sprintf("%s:%s", ip.String(), port), 1)
 		fmt.Printf("remote shard url: %s\n", remoteShard)
-		reverseProxy(p, mux, remoteShard)
+		err = reverseProxy(p, mux, remoteShard)
+		if err != nil {
+			return nil, err
+		}
 
 		s.Handler = mux
 		servers = append(servers, s)
@@ -155,12 +159,12 @@ func (p *Proxy) configure() ([]*http.Server, error) {
 
 // build a chain of handlers, with the last one actually performing the reverse
 // proxy to the remote resource.
-func reverseProxy(p *Proxy, mux *http.ServeMux, remoteUrl string) {
+func reverseProxy(p *Proxy, mux *http.ServeMux, remoteUrl string) error {
 
 	// if this remote host is not a valid resource we can't continue
 	remote, err := url.Parse(remoteUrl)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("cannot parse remote url '%s' - %s", remoteUrl, err)
 	}
 
 	fmt.Printf("reverse proxying to: %#v\n", remote)
@@ -222,6 +226,7 @@ func reverseProxy(p *Proxy, mux *http.ServeMux, remoteUrl string) {
 	} else {
 		mux.Handle(p.HostPath, chain)
 	}
+	return nil
 }
 
 // convert a list of IP address strings in CIDR format to IPNets
