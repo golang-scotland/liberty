@@ -1,0 +1,18 @@
+[Unit]
+Description=HTTP Router
+Requires=network.target
+After=remote-fs.target
+After=nss-lookup.target
+After=syslog.target
+
+
+[Service]
+Type=simple
+Restart=always
+ExecStart=/usr/local/bin/router -v=3 -alsologtostderr=true
+ExecReload=/bin/kill -USR2 $MAINPID
+ExecStop=/bin/kill -WINCH $MAINPID
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
