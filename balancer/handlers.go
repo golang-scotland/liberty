@@ -1,4 +1,4 @@
-package liberty
+package balancer
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 	"github.com/NYTimes/gziphandler"
 	"github.com/gnanderson/trie"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.scot/pkg/env"
+	"golang.scot/env"
 )
 
 const (

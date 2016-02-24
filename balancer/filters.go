@@ -1,11 +1,11 @@
-package liberty
+package balancer
 
 import (
 	"hash/fnv"
 	"net/http"
 	"strconv"
 
-	"golang.scot/pkg/env"
+	"golang.scot/env"
 )
 
 var DefaultTypes = []string{

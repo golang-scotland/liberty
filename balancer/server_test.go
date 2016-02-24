@@ -1,4 +1,4 @@
-package liberty
+package balancer
 
 import "testing"
 
