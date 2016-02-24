@@ -2,5 +2,5 @@ build:
   image: registry.golang.scot/go:1.6
   commands:
     - go get
-    - cd pkg/liberty && go test -v .
-    - go build ./cmd/router
+    - cd balancer && go test
+    - go build ./router
