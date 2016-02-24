@@ -55,7 +55,7 @@ services:
       APP_ENV: dev
     restart: always
     build:
-      context: ./cmd/router
+      context: ./router
       dockerfile: Dockerfile
     ports:
       - "80:80"
