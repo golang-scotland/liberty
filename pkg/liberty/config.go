@@ -73,7 +73,7 @@ type ApiWhitelist struct {
 	Hostnames []string `yaml:"hostnames"`
 }
 
-// Crt defines a domain, certificate and keyfile in PEM format
+// Crt defines a domain, certificate and keyfile
 type Crt struct {
 	Domain   string
 	CertFile string
