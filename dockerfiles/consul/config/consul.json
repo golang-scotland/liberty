@@ -8,8 +8,8 @@
 		"https": 8500
 	},
 	"ca_file": "/etc/consul.d/server-ca.crt",
-    "cert_file": "/etc/consul.d/server.crt",
-    "key_file": "/etc/consul.d/server.key",
+	"cert_file": "/etc/consul.d/server.crt",
+	"key_file": "/etc/consul.d/server.key",
 	"verify_incoming": true,
 	"recursor": "8.8.8.8",
 	"disable_update_check": true,

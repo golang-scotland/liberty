@@ -62,6 +62,28 @@ func HelloHandler(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Hello World!"))
 }
 
+func GoGetHandler(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err == nil {
+		if r.Form.Get("go-get") == "1" {
+
+		}
+	}
+}
+
+var goGetTpl string = `
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<meta name="go-import" content="{{ .path }} git https://github.com/golang-scot/{{ .path }}">
+<meta http-equiv="refresh" content="0; url=https://godoc.org/golang.scot/{{ .path }}">
+</head>
+<body>
+<a href="https://godoc.org/golang.scot/{{ .path }}">golang.scot/{{ .path }}</a>.
+</body>
+</html>
+`
+
 type GzipHandler struct{}
 
 func (hl *GzipHandler) Chain(h http.Handler) http.Handler {
@@ -125,7 +147,7 @@ func (rh *IPRestrictedHandler) Chain(h http.Handler) http.Handler {
 			}
 		}
 
-		http.Error(w, fmt.Sprintf("IP %s is not allowed...", ip), 403)
+		http.Error(w, fmt.Sprintf("☹ - IP %s is not allowed...", ip), 403)
 	})
 }
 
