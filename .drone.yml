@@ -1,0 +1,4 @@
+build:
+  image: registry.golang.scot/go:1.6
+  commands:
+    - go test ./...
