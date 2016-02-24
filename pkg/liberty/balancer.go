@@ -26,24 +26,14 @@ type Balancer struct {
 	listener net.Listener
 	proxies  []*httputil.ReverseProxy
 	servers  []*server
+	config   *Config
 }
 
 func NewBalancer() *Balancer {
 	b := &Balancer{
 		Errors:  make(chan error),
 		servers: make([]*server, 0),
-	}
-
-	for _, proxy := range conf.Proxies {
-		servers, err := proxy.configure()
-		if err != nil {
-			fmt.Printf("the proxy for '%s' was not configured - %s", proxy.HostPath, err)
-			continue
-		}
-		for i, s := range servers {
-			b.servers = append(b.servers, &server{0, s})
-			b.servers[i].s.ConnState = b.servers[i].trackState
-		}
+		config:  conf,
 	}
 	return b
 }
@@ -51,6 +41,18 @@ func NewBalancer() *Balancer {
 // Balance incoming requests between a set of configured reverse proxies using
 // the desired balancing strategy.
 func (b *Balancer) Balance(strat strategy) error {
+	for _, proxy := range b.config.Proxies {
+		err := proxy.Configure()
+		if err != nil {
+			fmt.Printf("the proxy for '%s' was not configured - %s", proxy.HostPath, err)
+			continue
+		}
+		for i, s := range proxy.servers {
+			b.servers = append(b.servers, &server{0, s})
+			b.servers[i].s.ConnState = b.servers[i].trackState
+		}
+	}
+
 	switch strat {
 	default:
 		return b.bestEffort()
@@ -74,6 +76,7 @@ func (b *Balancer) bestEffort() error {
 	for _, s := range servers {
 		glog.Infof("%#v", s.Handler)
 	}
+
 	return gracehttp.Serve(b.Servers()...)
 }
 

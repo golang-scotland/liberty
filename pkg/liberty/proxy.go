@@ -27,6 +27,7 @@ type Proxy struct {
 	HandlerType   string   `yaml:"handlerType"`
 	IPs           []string `yaml:"ips, flow"`
 	Cors          []string `yaml:"cors, flow"`
+	servers       []*http.Server
 }
 
 var muxers map[int]*http.ServeMux
@@ -45,10 +46,19 @@ func getMux(port int) *http.ServeMux {
 // Configure a proxy for use with the paramaters from the parsed yaml config. If
 // a remote host resolves to more than one IP address, we'll create a server and
 // for each. This works because under the hood we're using SO_REUSEPORT.
-func (p *Proxy) configure() ([]*http.Server, error) {
-	var servers []*http.Server
+func (p *Proxy) Configure() error {
+	p.normalise()
+	if err := p.parseRemoteHost(); err != nil {
+		return err
+	}
+	if err := p.initServers(); err != nil {
+		return err
+	}
+	return nil
+}
 
-	// In order to avoid ambiguity,  each entry should have a port to listen on.
+// set port and scheme defaults
+func (p *Proxy) normalise() {
 	switch {
 	case !p.Tls && p.HostPort == 0:
 		p.HostPort = 80
@@ -66,11 +76,17 @@ func (p *Proxy) configure() ([]*http.Server, error) {
 		p.RemoteHost = fmt.Sprintf("%s%s", scheme, p.RemoteHost)
 	}
 
+	if p.HostIP == "" {
+		p.HostIP = "0.0.0.0"
+	}
+}
+
+func (p *Proxy) parseRemoteHost() error {
+
 	// TODO skip this proxy if error here?
 	remote, err := url.Parse(p.RemoteHost)
 	if err != nil {
-		fmt.Printf("remote host URL could not be parsed - %s", err)
-		return nil, err
+		return fmt.Errorf("remote host URL could not be parsed - %s", err)
 	}
 	p.remoteHostURL = remote
 
@@ -82,7 +98,7 @@ func (p *Proxy) configure() ([]*http.Server, error) {
 	if len(chunks) > 1 {
 		hostName = chunks[0]
 	} else {
-		hostName = remote.Host
+		hostName = p.remoteHostURL.Host
 
 		// add the port - we'll need it to assemble remote URL based on ip
 		var port int
@@ -91,20 +107,18 @@ func (p *Proxy) configure() ([]*http.Server, error) {
 		} else {
 			port = 80
 		}
-		remote.Host = fmt.Sprintf("%s:%d", remote.Host, port)
+		remote.Host = fmt.Sprintf("%s:%d", p.remoteHostURL.Host, port)
 	}
 	ips, err := net.LookupIP(hostName)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("error in IP lookup for remote host '%s' - %s", hostName, err)
 	}
 	p.remoteHostIPs = ips
+	fmt.Printf("IP's for proxy backend: %#v\n", p.IPs)
+	return nil
+}
 
-	if p.HostIP == "" {
-		p.HostIP = "0.0.0.0"
-	}
-
-	fmt.Printf("Configuring proxy: %#v\n", p)
-
+func (p *Proxy) initServers() error {
 	// add an additional redirect from port 80
 	if p.TlsRedirect && p.HostPort == 443 {
 		s := &http.Server{
@@ -113,17 +127,16 @@ func (p *Proxy) configure() ([]*http.Server, error) {
 		m := getMux(80)
 		m.HandleFunc(p.HostPath, redir)
 		s.Handler = m
-		servers = append(servers, s)
+		p.servers = append(p.servers, s)
 	}
 
-	fmt.Printf("IP's for proxy backend: %#v\n", ips)
-
 	// now the server (or servers) for this proxy entry
-	for _, ip := range ips {
+	for _, ip := range p.remoteHostIPs {
 		s := &http.Server{
 			Addr: fmt.Sprintf("%s:%d", p.HostIP, p.HostPort),
 		}
-		mux := getMux(p.HostPort)
+		//mux := getMux(p.HostPort)
+		mux := http.NewServeMux()
 
 		if p.Tls {
 			setTLSConfig(s)
@@ -134,27 +147,26 @@ func (p *Proxy) configure() ([]*http.Server, error) {
 		if p.Ws {
 			mux.Handle(p.HostPath, websocketProxy(p.RemoteHost))
 			s.Handler = mux
-			servers = append(servers, s)
+			p.servers = append(p.servers, s)
 			continue
 		}
 
 		// now configure the reverse proxy
-		_, port, err := net.SplitHostPort(remote.Host)
+		_, port, err := net.SplitHostPort(p.remoteHostURL.Host)
 		if err != nil {
-			return nil, err
+			return fmt.Errorf("remote host '%s' has an invalid format - %s", p.remoteHostURL.Host, err)
 		}
-		remoteShard := strings.Replace(p.RemoteHost, remote.Host, fmt.Sprintf("%s:%s", ip.String(), port), 1)
+		remoteShard := strings.Replace(p.RemoteHost, p.remoteHostURL.Host, fmt.Sprintf("%s:%s", ip.String(), port), 1)
 		fmt.Printf("remote shard url: %s\n", remoteShard)
 		err = reverseProxy(p, mux, remoteShard)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		s.Handler = mux
-		servers = append(servers, s)
+		p.servers = append(p.servers, s)
 	}
-
-	return servers, nil
+	return nil
 }
 
 // build a chain of handlers, with the last one actually performing the reverse

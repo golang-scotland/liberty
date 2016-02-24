@@ -8,6 +8,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"testing"
+	"time"
 )
 
 func newProxy(addr string) *httputil.ReverseProxy {
@@ -32,25 +33,43 @@ func TestReusePort(t *testing.T) {
 	}))
 	defer s3.Close()
 
-	p1 := newProxy(s1.URL)
-	p2 := newProxy(s2.URL)
-	p3 := newProxy(s3.URL)
-
-	proxies := []*httputil.ReverseProxy{
-		p1,
-		p2,
-		p3,
-	}
-
 	tr := &http.Transport{}
 	tr.DisableKeepAlives = true
 	c := &http.Client{Transport: tr}
 
-	bAddr := "127.0.0.1:8989"
-	balancer := NewBalancer(bAddr, proxies)
+	balancer := NewBalancer()
 
-	ready := balancer.Balance(BestEffort)
-	<-ready
+	balancer.config.Proxies = []*Proxy{
+		{
+			HostPath:   "/",
+			RemoteHost: s1.URL,
+			HostIP:     "127.0.0.1",
+			HostPort:   8989,
+		},
+		{
+			HostPath:   "/",
+			RemoteHost: s2.URL,
+			HostIP:     "127.0.0.1",
+			HostPort:   8989,
+		},
+		{
+			HostPath:   "/",
+			RemoteHost: s3.URL,
+			HostIP:     "127.0.0.1",
+			HostPort:   8989,
+		},
+	}
+
+	var balanceErr error
+	go func() {
+		balanceErr = balancer.Balance(BestEffort)
+	}()
+	time.Sleep(2 * time.Second)
+
+	if balanceErr != nil {
+		t.Error(balanceErr)
+		return
+	}
 
 	var one, two, three int
 
