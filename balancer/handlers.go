@@ -11,7 +11,7 @@ import (
 	"github.com/NYTimes/gziphandler"
 	"github.com/gnanderson/trie"
 	"github.com/prometheus/client_golang/prometheus"
-	"golang.scot/env"
+	"golang.scot/liberty/env"
 )
 
 const (

@@ -2,9 +2,9 @@ FROM registry.golang.scot/systemd:latest
 
 ENV APP_ENV prod
 
-COPY dockerfiles/router.service dockerfiles/router.socket /usr/lib/systemd/system/
+COPY dockerfiles/liberty.service dockerfiles/liberty.socket /usr/lib/systemd/system/
 
-RUN systemctl enable router.socket; \
+RUN systemctl enable liberty.socket; \
 mkdir -p /etc/router;
 
 COPY router /usr/local/bin/

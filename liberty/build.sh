@@ -17,8 +17,8 @@ done
 DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
 cd $DIR
 go build .
-docker build --rm -t registry.golang.scot/router:${appenv} -f $DIR/${appenv}.Dockerfile $DIR
+docker build --rm -t registry.golang.scot/liberty:${appenv} -f $DIR/${appenv}.Dockerfile $DIR
 
 if [ "$push" = true ] ; then
-	docker push registry.golang.scot/router:${appenv}
+	docker push registry.golang.scot/liberty:${appenv}
 fi

@@ -46,7 +46,7 @@ func main() {
 	bl := balancer.NewBalancer()
 
 	glog.Infoln("Router is bootstrapped, listening for connections...")
-	if err := bl.Balance(balancer.BestEffort); err != nil {
+	if err := bl.Balance(balancer.Default); err != nil {
 		glog.Errorf("Fatal error starting load balancer: %s, %t\n", err, err)
 	}
 

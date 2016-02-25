@@ -50,12 +50,12 @@ services:
 #      - front
 #      - back
 
-  router:
+  liberty:
     environment:
       APP_ENV: dev
     restart: always
     build:
-      context: ./router
+      context: ./liberty
       dockerfile: Dockerfile
     ports:
       - "80:80"

@@ -1,0 +1,31 @@
+env: prod
+profiling: false
+profStatsFile: "/tmp/router.prof"
+certs:
+  - {
+    domain: example.com,
+    certFile: /etc/.lego/certificates/example.com.crt,
+    keyFile: /etc/.lego/certificates/example.com.key,
+  }
+
+proxies:
+  - {
+    hostPath: "www.example.com./",
+    remoteHost: "http://www:8080",
+    tls: true,
+    tlsRedirect: true,
+    ips: [
+      10.0.0.0/16,
+    ],
+  }
+  - {
+    hostPath: "service.example.com/",
+    remoteHost: "http://service:5000",
+    tls: true,
+    tlsRedirect: true,
+    ips: [
+      192.168.0.1/32,
+    ],
+  }
+
+
