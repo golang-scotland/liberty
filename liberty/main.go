@@ -9,7 +9,7 @@ import (
 	_ "net/http/pprof"
 
 	"github.com/golang/glog"
-	"golang.scot/balancer"
+	"golang.scot/liberty/balancer"
 )
 
 const (
@@ -40,7 +40,7 @@ func usage() {
 
 func main() {
 	flag.Usage = usage
-	flag.Parse()
+	//flag.Parse()
 
 	http.DefaultTransport.(*http.Transport).MaxIdleConnsPerHost = 100
 	bl := balancer.NewBalancer()
