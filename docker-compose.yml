@@ -67,7 +67,7 @@ services:
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
       - /etc/localtime:/etc/localtime:ro
       - /root/.lego/certificates:/root/.lego/certificates
-      - /etc/router:/etc/router
+      - /etc/liberty:/etc/liberty
     privileged: true
     depends_on:
       - registry

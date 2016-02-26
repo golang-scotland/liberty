@@ -1,16 +1,19 @@
 package router
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
 
 type server struct {
-	open uint32
-	s    *http.Server
+	open    uint32
+	s       *http.Server
+	handler http.Handler
 }
 
 func (s *server) openConns() uint32 {
@@ -35,15 +38,24 @@ type ServerGroup struct {
 	servers []*server
 }
 
-func NewServerGroup(servers []*http.Server) *ServerGroup {
+func NewServerGroup(router *HttpRouter, servers []*http.Server) *ServerGroup {
 	sg := &ServerGroup{
 		w:       &sync.Mutex{},
-		servers: make([]*server, len(servers)),
+		servers: make([]*server, 0),
 	}
-	for i, s := range servers {
-		sg.servers[i] = &server{s: s}
-		sg.servers[i].s.ConnState = sg.servers[i].trackState
+	for _, s := range servers {
+		if strings.HasSuffix(s.Addr, "80") {
+			continue
+		}
+		srv := &server{
+			s:       s,
+			handler: s.Handler,
+		}
+		s.ConnState = srv.trackState
+		s.Handler = router
+		sg.servers = append(sg.servers, srv)
 	}
+	fmt.Sprintf("%#v\n", sg)
 	return sg
 }
 
@@ -62,7 +74,7 @@ func (sg *ServerGroup) leastUsed() http.Handler {
 	}
 	sg.w.Lock()
 	sort.Sort(sg)
-	h = sg.servers[0].s.Handler
+	h = sg.servers[0].handler
 	sg.w.Unlock()
 	return h
 }

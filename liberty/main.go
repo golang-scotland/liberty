@@ -40,7 +40,7 @@ func usage() {
 
 func main() {
 	flag.Usage = usage
-	//flag.Parse()
+	flag.Parse()
 
 	http.DefaultTransport.(*http.Transport).MaxIdleConnsPerHost = 100
 	bl := balancer.NewBalancer()
