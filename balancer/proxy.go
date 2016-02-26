@@ -216,7 +216,8 @@ func reverseProxy(p *Proxy, mux *http.ServeMux, remoteUrl string) error {
 	var final http.Handler
 	switch p.HandlerType {
 	default:
-		final = GoGetHandler(reverseProxy)
+		//final = GoGetHandler(reverseProxy)
+		final = reverseProxy
 	case apiHandler:
 		handlers = append(handlers, NewApiHandler(p))
 		final = reverseProxy

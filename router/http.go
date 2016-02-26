@@ -14,7 +14,6 @@ type HttpRouter struct {
 
 func (h *HttpRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	hostPath := r.Host + r.URL.Path
-	fmt.Printf("HOSTPATH: %s\n URL: %#v\n REQUEST: %#v\n", hostPath, r.URL, r)
 	if handler := h.Get(hostPath); handler != nil {
 		handler.ServeHTTP(w, r)
 		return

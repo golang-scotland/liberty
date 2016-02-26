@@ -11,7 +11,7 @@ import (
 func TestExactMatch(t *testing.T) {
 	router := &HttpRouter{}
 	mux := http.NewServeMux()
-	sg := &ServerGroup{servers: []*server{{s: &http.Server{Handler: mux}}}}
+	sg := &ServerGroup{servers: []*server{{s: &http.Server{Handler: mux}, handler: mux}}}
 	if err := router.put("http://www.example.com", sg); err != nil {
 		t.Errorf("insertion error: foo")
 	}
@@ -24,7 +24,7 @@ func TestRouteMatch(t *testing.T) {
 
 	router := &HttpRouter{}
 	mux := http.NewServeMux()
-	sg := &ServerGroup{servers: []*server{{s: &http.Server{Handler: mux}}}}
+	sg := &ServerGroup{servers: []*server{{s: &http.Server{Handler: mux}, handler: mux}}}
 	router.put("http://www.example.com", sg)
 	match := router.Get("http://www.example.com/foo/")
 	if match == nil {
@@ -39,8 +39,8 @@ func TestLongesPrefixtMatch(t *testing.T) {
 	router := &HttpRouter{}
 	mux1 := http.NewServeMux()
 	mux2 := http.NewServeMux()
-	h1 := &ServerGroup{servers: []*server{{s: &http.Server{Handler: mux1}}}}
-	h2 := &ServerGroup{servers: []*server{{s: &http.Server{Handler: mux2}}}}
+	h1 := &ServerGroup{servers: []*server{{s: &http.Server{Handler: mux1}, handler: mux1}}}
+	h2 := &ServerGroup{servers: []*server{{s: &http.Server{Handler: mux2}, handler: mux2}}}
 	router.put("http://www.example.com/", h1)
 	router.put("http://www.example.com/foo/", h2)
 	match := router.Get("http://www.example.com/foo/bar")
