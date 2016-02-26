@@ -114,7 +114,7 @@ func (p *Proxy) parseRemoteHost() error {
 		return fmt.Errorf("error in IP lookup for remote host '%s' - %s", hostName, err)
 	}
 	p.remoteHostIPs = ips
-	fmt.Printf("IP's for proxy backend: %#v\n", p.IPs)
+	fmt.Printf("IP's for proxy backend: %#v\n", p.remoteHostIPs)
 	return nil
 }
 
@@ -124,9 +124,9 @@ func (p *Proxy) initServers() error {
 		s := &http.Server{
 			Addr: fmt.Sprintf("%s:80", p.HostIP),
 		}
-		m := getMux(80)
-		m.HandleFunc(p.HostPath, redir)
-		s.Handler = m
+		mux := http.NewServeMux()
+		mux.HandleFunc(p.HostPath, redir)
+		s.Handler = mux
 		p.servers = append(p.servers, s)
 	}
 
@@ -215,7 +215,7 @@ func reverseProxy(p *Proxy, mux *http.ServeMux, remoteUrl string) error {
 	var final http.Handler
 	switch p.HandlerType {
 	default:
-		final = reverseProxy
+		final = GoGetHandler(reverseProxy)
 	case apiHandler:
 		handlers = append(handlers, NewApiHandler(p))
 		final = reverseProxy
@@ -223,7 +223,7 @@ func reverseProxy(p *Proxy, mux *http.ServeMux, remoteUrl string) error {
 		final = prometheus.InstrumentHandler(hostname, prometheus.Handler())
 	case redirectHandler:
 		final = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Redirect(w, r, fmt.Sprintf("%s/%s", p.RemoteHost, r.URL.Path), 301)
+			http.Redirect(w, r, fmt.Sprintf("%s/%s", p.RemoteHost, r.URL.Path), 302)
 		})
 	}
 

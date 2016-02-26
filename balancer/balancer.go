@@ -2,13 +2,12 @@ package balancer
 
 import (
 	"fmt"
-	"net/http/httputil"
+	"net/http"
 
 	"golang.scot/liberty/router"
 
 	"github.com/facebookgo/grace/gracehttp"
 	"github.com/facebookgo/grace/gracenet"
-	"github.com/golang/glog"
 )
 
 type strategy int
@@ -18,14 +17,25 @@ const (
 )
 
 type Balancer struct {
-	proxies []*httputil.ReverseProxy
-	sg      *router.ServerGroup
-	config  *Config
+	config *Config
+	groups map[string]*router.ServerGroup
+	router *router.HttpRouter
 }
 
 func NewBalancer() *Balancer {
 	b := &Balancer{
 		config: conf,
+		groups: map[string]*router.ServerGroup{},
+		router: &router.HttpRouter{},
+	}
+	for _, proxy := range b.config.Proxies {
+		err := proxy.Configure()
+		if err != nil {
+			fmt.Printf("the proxy for '%s' was not configured - %s", proxy.HostPath, err)
+			continue
+		}
+		b.groups[proxy.HostPath] = router.NewServerGroup(b.router, proxy.servers)
+		b.router.Put(proxy.HostPath, b.groups[proxy.HostPath])
 	}
 	return b
 }
@@ -33,14 +43,6 @@ func NewBalancer() *Balancer {
 // Balance incoming requests between a set of configured reverse proxies using
 // the desired balancing strategy.
 func (b *Balancer) Balance(strat strategy) error {
-	for _, proxy := range b.config.Proxies {
-		err := proxy.Configure()
-		if err != nil {
-			fmt.Printf("the proxy for '%s' was not configured - %s", proxy.HostPath, err)
-			continue
-		}
-		b.sg = router.NewServerGroup(proxy.servers)
-	}
 
 	switch strat {
 	default:
@@ -48,14 +50,12 @@ func (b *Balancer) Balance(strat strategy) error {
 	}
 }
 
-// the bestEffort balancer leaves all the heavy lifting to the kernel, using the
-// 3.9+ SO_REUSEPORT socket configuration.
 func (b *Balancer) bestEffort() error {
+	// this toggles SO_REUSEPORT
 	gracenet.Flags = gracenet.FlagReusePort
-	servers := b.sg.HttpServers()
-	for _, s := range servers {
-		glog.Infof("%#v", s.Handler)
+	servers := make([]*http.Server, 0)
+	for _, sg := range b.groups {
+		servers = append(servers, sg.HttpServers()...)
 	}
-
 	return gracehttp.Serve(servers...)
 }

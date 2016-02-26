@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	configFile     = "router"
-	configLocation = "/etc/router"
+	configFile     = "liberty"
+	configLocation = "/etc/liberty"
 )
 
 var (
