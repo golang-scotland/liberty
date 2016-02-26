@@ -1,6 +1,8 @@
+clone:
+  path: golang.scot/liberty
 build:
   image: registry.golang.scot/go:1.6
   commands:
     - cd router && go test
-    - cd balancer && go test
-    - go build ./liberty
+    - cd ../balancer && go test
+    - cd ../liberty && go build .
