@@ -94,7 +94,7 @@ func getGGTpl() *template.Template {
 <html>
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
-<meta name="go-import" content="{{ .Host }}{{ .Path }} git https://github.com/golang-scot{{ .Path }}">
+<meta name="go-import" content="{{ .Host }}{{ .Path }} git https://github.com/golang-scot/liberty }}">
 <meta http-equiv="refresh" content="0; url=https://godoc.org/{{ .Host }}{{ .Path }}">
 </head>
 <body>
