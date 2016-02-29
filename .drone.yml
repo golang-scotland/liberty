@@ -3,7 +3,7 @@ clone:
 build:
   image: registry.golang.scot/go:1.6
   commands:
-    - curl -sOL https://github.com/Masterminds/glide/releases/download/0.9.1/glide-0.8.2-linux-amd64.tar.gz
+    - wget https://github.com/Masterminds/glide/releases/download/0.9.1/glide-0.8.2-linux-amd64.tar.gz
     - tar -zxvf glide-0.9.1-linux-amd64.tar.gz
     - mv linux-amd64/glide glide
     - chmod +x glide
