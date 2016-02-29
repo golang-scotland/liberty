@@ -33,9 +33,9 @@ rm -r $(pwd)
 
 # build the container image
 if [ "$appenv" = "go" ] ; then
-	docker build --rm -t golang.scot/go:${gover} $DIR
+	docker build --rm -t registry.golang.scot/go:${gover} $DIR
 else
-	docker build --rm -t golang.scot/go:${appenv} -f $DIR/${appenv}.Dockerfile $DIR
+	docker build --rm -t registry.golang.scot/go:${appenv} -f $DIR/${appenv}.Dockerfile $DIR
 fi
 
 # cleanup
