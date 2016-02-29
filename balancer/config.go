@@ -58,6 +58,10 @@ type Config struct {
 	Whitelist     []*ApiWhitelist `yaml:"whitelist"`
 }
 
+func SetConfig(cfg *Config) {
+	conf = cfg
+}
+
 // ApiWhitelist instructs an HTTP API handler to make this open to any remote
 // IP. This can be modified to being a 'greylist' entry by specificing a list
 // of IP's in CIDR format which the resource is accessible to.

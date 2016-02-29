@@ -3,6 +3,7 @@ package balancer
 import (
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -20,56 +21,56 @@ func newProxy(addr string) *httputil.ReverseProxy {
 }
 
 func TestReusePort(t *testing.T) {
-	s1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "1")
-	}))
-	defer s1.Close()
-	s2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "2")
-	}))
-	defer s2.Close()
-	s3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "3")
-	}))
-	defer s3.Close()
 
-	tr := &http.Transport{}
-	tr.DisableKeepAlives = true
-	c := &http.Client{Transport: tr}
+	numServers := 3
+	addrs := make([]*net.TCPAddr, numServers)
+	for i := 1; i <= numServers; i++ {
+		v := i
+		server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprint(w, v)
+		}))
+		server.Start()
+		fmt.Printf("S%d URL: %s\n", i, server.URL)
+		defer server.Close()
 
-	balancer := NewBalancer()
+		url, _ := url.Parse(server.URL)
 
-	balancer.config.Proxies = []*Proxy{
-		{
-			HostPath:   "/",
-			RemoteHost: s1.URL,
-			HostIP:     "127.0.0.1",
-			HostPort:   8989,
-		},
-		{
-			HostPath:   "/",
-			RemoteHost: s2.URL,
-			HostIP:     "127.0.0.1",
-			HostPort:   8989,
-		},
-		{
-			HostPath:   "/",
-			RemoteHost: s3.URL,
-			HostIP:     "127.0.0.1",
-			HostPort:   8989,
+		addr, _ := net.ResolveTCPAddr("tcp", url.Host)
+		addrs[i-1] = addr
+	}
+
+	conf = &Config{
+		Proxies: []*Proxy{
+			{
+				HostPath:    "127.0.0.1:8989/",
+				RemoteHost:  "127.0.0.1:3456",
+				HostIP:      "127.0.0.1",
+				HostPort:    8989,
+				remoteAddrs: addrs,
+			},
 		},
 	}
 
+	balancer := NewBalancer()
+
 	var balanceErr error
 	go func() {
-		balanceErr = balancer.Balance(BestEffort)
+		balanceErr = balancer.Balance(Default)
+		if balanceErr != nil {
+			fmt.Sprintf("balancer server error: %s", balanceErr)
+			t.Fatalf("balancer server error: %s", balanceErr)
+		}
 	}()
-	time.Sleep(2 * time.Second)
+	time.Sleep(1 * time.Second)
 
 	if balanceErr != nil {
 		t.Error(balanceErr)
 		return
 	}
+
+	tr := &http.Transport{}
+	tr.DisableKeepAlives = true
+	c := &http.Client{Transport: tr}
 
 	var one, two, three int
 

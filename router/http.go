@@ -22,7 +22,12 @@ func (h *HttpRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HttpRouter) Put(key string, serverGroup *ServerGroup) error {
-	return h.put(key, serverGroup)
+	fmt.Printf("Registering HostPath '%s'\n", key)
+	if err := h.put(key, serverGroup); err != nil {
+		fmt.Println("could not register HotPath '%s' - %s", key, err)
+		return err
+	}
+	return nil
 }
 
 func (h *HttpRouter) Get(key string) http.Handler {

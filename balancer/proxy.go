@@ -17,7 +17,7 @@ type Proxy struct {
 	HostPath      string `yaml:"hostPath"`
 	RemoteHost    string `yaml:"remoteHost"`
 	remoteHostURL *url.URL
-	remoteHostIPs []net.IP
+	remoteAddrs   []*net.TCPAddr
 	HostAlias     []string `yaml:"hostAlias"`
 	HostIP        string   `yaml:"hostIP"`
 	HostPort      int      `yaml:"hostPort"`
@@ -28,19 +28,6 @@ type Proxy struct {
 	IPs           []string `yaml:"ips, flow"`
 	Cors          []string `yaml:"cors, flow"`
 	servers       []*http.Server
-}
-
-var muxers map[int]*http.ServeMux
-
-func getMux(port int) *http.ServeMux {
-	if muxers == nil {
-		muxers = make(map[int]*http.ServeMux)
-	}
-	if m, ok := muxers[port]; ok {
-		return m
-	}
-	muxers[port] = http.NewServeMux()
-	return muxers[port]
 }
 
 // Configure a proxy for use with the paramaters from the parsed yaml config. If
@@ -88,33 +75,48 @@ func (p *Proxy) parseRemoteHost() error {
 	if err != nil {
 		return fmt.Errorf("remote host URL could not be parsed - %s", err)
 	}
-	p.remoteHostURL = remote
 
 	// to support load balancing we're going to be creating multiple servers
 	// in this scenario we'll need a slice of ip strings and we'll also be
 	// explicit about the remote port.
 	chunks := strings.Split(remote.Host, ":")
-	var hostName string
+	var remoteHost string
+	var remotePort string
+
 	if len(chunks) > 1 {
-		hostName = chunks[0]
+		remoteHost, remotePort, err = net.SplitHostPort(remote.Host)
+		if err != nil {
+			return fmt.Errorf("remote host:port could not be parsed - %s", err)
+		}
 	} else {
-		hostName = p.remoteHostURL.Host
+		remoteHost = remote.Host
 
 		// add the port - we'll need it to assemble remote URL based on ip
-		var port int
 		if p.Tls {
-			port = 443
+			remotePort = "443"
 		} else {
-			port = 80
+			remotePort = "80"
 		}
-		remote.Host = fmt.Sprintf("%s:%d", p.remoteHostURL.Host, port)
+		remote.Host = fmt.Sprintf("%s:%s", remoteHost, remotePort)
 	}
-	ips, err := net.LookupIP(hostName)
+	p.remoteHostURL = remote
+
+	ips, err := net.LookupIP(remoteHost)
 	if err != nil {
-		return fmt.Errorf("error in IP lookup for remote host '%s' - %s", hostName, err)
+		return fmt.Errorf("error in IP lookup for remote host '%s' - %s", remoteHost, err)
 	}
-	p.remoteHostIPs = ips
-	fmt.Printf("IP's for proxy backend: %#v\n", p.remoteHostIPs)
+	if p.remoteAddrs == nil {
+		addrs := make([]*net.TCPAddr, len(ips), len(ips))
+		for i, ip := range ips {
+			addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%s", ip, remotePort))
+			if err != nil {
+				return fmt.Errorf("cannot parse address, port: '%s', port: %s, err: ", ip, remotePort, err)
+			}
+			addrs[i] = addr
+		}
+		p.remoteAddrs = addrs
+	}
+	fmt.Printf("IP's for proxy backend: %#s\n", p.remoteAddrs)
 	return nil
 }
 
@@ -131,11 +133,10 @@ func (p *Proxy) initServers() error {
 	}
 
 	// now the server (or servers) for this proxy entry
-	for _, ip := range p.remoteHostIPs {
+	for _, addr := range p.remoteAddrs {
 		s := &http.Server{
 			Addr: fmt.Sprintf("%s:%d", p.HostIP, p.HostPort),
 		}
-		//mux := getMux(p.HostPort)
 		mux := http.NewServeMux()
 
 		if p.Tls {
@@ -151,14 +152,9 @@ func (p *Proxy) initServers() error {
 			continue
 		}
 
-		// now configure the reverse proxy
-		_, port, err := net.SplitHostPort(p.remoteHostURL.Host)
-		if err != nil {
-			return fmt.Errorf("remote host '%s' has an invalid format - %s", p.remoteHostURL.Host, err)
-		}
-		remoteShard := strings.Replace(p.RemoteHost, p.remoteHostURL.Host, fmt.Sprintf("%s:%s", ip.String(), port), 1)
+		remoteShard := strings.Replace(p.RemoteHost, p.remoteHostURL.Host, addr.String(), 1)
 		fmt.Printf("remote shard url: %s\n", remoteShard)
-		err = reverseProxy(p, mux, remoteShard)
+		err := reverseProxy(p, mux, remoteShard)
 		if err != nil {
 			return err
 		}
@@ -231,14 +227,13 @@ func reverseProxy(p *Proxy, mux *http.ServeMux, remoteUrl string) error {
 
 	// link the handler chain
 	chain := NewChain(handlers...).Link(final)
+	mux.Handle(p.HostPath, chain)
 	if len(p.HostAlias) > 0 {
 		chunks := strings.Split(p.HostPath, ".")
 		for _, alias := range p.HostAlias {
 			chunks[0] = alias
 			mux.Handle(strings.Join(chunks, "."), chain)
 		}
-	} else {
-		mux.Handle(p.HostPath, chain)
 	}
 	return nil
 }

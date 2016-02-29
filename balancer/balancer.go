@@ -35,7 +35,11 @@ func NewBalancer() *Balancer {
 			continue
 		}
 		b.groups[proxy.HostPath] = router.NewServerGroup(b.router, proxy.servers)
-		b.router.Put(proxy.HostPath, b.groups[proxy.HostPath])
+		err = b.router.Put(proxy.HostPath, b.groups[proxy.HostPath])
+		if err != nil {
+			fmt.Printf("unable to register the HostPath '%s' with this route", proxy.HostPath)
+			continue
+		}
 	}
 	return b
 }
