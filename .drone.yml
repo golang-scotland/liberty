@@ -2,6 +2,7 @@ clone:
   path: golang.scot/liberty
 build:
   image: registry.golang.scot/go:1.6
+  pull: true
   commands:
     - uname -a
     - curl -sOL https://github.com/Masterminds/glide/releases/download/0.9.1/glide-0.8.2-linux-amd64.tar.gz
