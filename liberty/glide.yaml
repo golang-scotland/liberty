@@ -1,0 +1,5 @@
+package: golang.scot/liberty/liberty
+import:
+- package: github.com/golang/glog
+- package: golang.scot/liberty/balancer
+  repo: https://github.com/golang-scot/liberty.git

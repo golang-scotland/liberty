@@ -15,4 +15,4 @@ build:
     - cd balancer && ../glide install
     - cd ../router && go test
     - cd ../balancer && go test
-    - cd ../liberty && go build .
+    - cd ../liberty && ../glide install  && go build .
