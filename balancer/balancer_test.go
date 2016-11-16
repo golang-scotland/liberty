@@ -76,29 +76,32 @@ func TestReusePort(t *testing.T) {
 
 	for i := 0; i <= 100; i++ {
 
-		resp, err := c.Get("http://127.0.0.1:8989/")
-		if err != nil {
-			t.Fatalf("client get error: %s", err)
-		}
+		go func() {
+			resp, err := c.Get("http://127.0.0.1:8989/")
+			if err != nil {
+				t.Fatalf("client get error: %s", err)
+			}
 
-		str, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			fmt.Println(err)
-			t.Fatalf(err.Error())
-		}
-		t.Logf("%d: %s\n", i, str)
+			str, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				fmt.Println(err)
+				t.Fatalf(err.Error())
+			}
+			//t.Logf("%d: %s\n", i, str)
 
-		switch string(str) {
-		case "1":
-			one++
-		case "2":
-			two++
-		case "3":
-			three++
-		}
+			switch string(str) {
+			case "1":
+				one++
+			case "2":
+				two++
+			case "3":
+				three++
+			}
+		}()
 
 	}
 
+	time.Sleep(5 * time.Second)
 	if one == 0 || two == 0 || three == 0 {
 		t.Fail()
 	}

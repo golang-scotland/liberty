@@ -1,9 +1,0 @@
-hash: 99e6dc69d3d971c179c05c86e1e1d3988f242982afdcd50491d8c268a707d9f0
-updated: 2016-02-29T16:48:31.786895755Z
-imports:
-- name: github.com/golang/glog
-  version: 23def4e6c14b4da8ac2ed8007337bc5eb5007998
-- name: golang.scot/liberty/balancer
-  version: 3251bb355219be1aea7d7b209f49e3fd0ff7e5c3
-  repo: https://github.com/golang-scot/liberty.git
-devImports: []

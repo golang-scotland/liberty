@@ -26,3 +26,5 @@ _testmain.go
 *.out
 
 liberty/liberty
+.DS_Store
+vendor/*

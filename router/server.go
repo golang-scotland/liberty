@@ -1,7 +1,6 @@
 package router
 
 import (
-	"fmt"
 	"net"
 	"net/http"
 	"sort"
@@ -29,19 +28,23 @@ func (s *server) trackState(c net.Conn, cs http.ConnState) {
 		// new/active connections will eventually transition to hijacked or closed and
 		// with both being terminal states we will decrement the count on a callback
 		// from either of these states.
-		atomic.AddUint32(&s.open, ^uint32(0))
+		//atomic.AddUint32(&s.open, ^uint32(0))
 	}
 }
 
+// ServerGroup defines a grouping of servers which can be have requests routed
+// to via a liberty router
 type ServerGroup struct {
 	w       *sync.Mutex
 	servers []*server
 }
 
-func NewServerGroup(router *HttpRouter, servers []*http.Server) *ServerGroup {
+// NewServerGroup creates a server group from a router and a slice of standard
+// library http servers
+func NewServerGroup(router *HTTPRouter, servers []*http.Server) *ServerGroup {
 	sg := &ServerGroup{
 		w:       &sync.Mutex{},
-		servers: make([]*server, 0),
+		servers: []*server{},
 	}
 	for _, s := range servers {
 		if strings.HasSuffix(s.Addr, "80") {
@@ -55,11 +58,13 @@ func NewServerGroup(router *HttpRouter, servers []*http.Server) *ServerGroup {
 		s.Handler = router
 		sg.servers = append(sg.servers, srv)
 	}
-	fmt.Sprintf("%#v\n", sg)
+	//fmt.Sprintf("%#v\n", sg)
 	return sg
 }
 
-func (sg *ServerGroup) HttpServers() []*http.Server {
+// HTTPServers returns the standard library http servers associated with this
+// ServerGroup
+func (sg *ServerGroup) HTTPServers() []*http.Server {
 	servers := make([]*http.Server, len(sg.servers), len(sg.servers))
 	for i, s := range sg.servers {
 		servers[i] = s.s

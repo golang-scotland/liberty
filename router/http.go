@@ -4,85 +4,226 @@
 package router
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
-type HttpRouter struct {
+// HTTPRouter is a ternary search tree based HTTP request router. HTTPRouter
+// satifsies the standard libray http.Handler interface.
+type HTTPRouter struct {
 	tree *tree
 }
 
-func (h *HttpRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	hostPath := r.Host + r.URL.Path
-	if handler := h.Get(hostPath); handler != nil {
-		handler.ServeHTTP(w, r)
-		return
-	}
-	http.NotFound(w, r)
+func NewHTTPRouter() *HTTPRouter {
+	return &HTTPRouter{tree: &tree{}}
 }
 
-func (h *HttpRouter) Put(key string, serverGroup *ServerGroup) error {
-	fmt.Printf("Registering HostPath '%s'\n", key)
-	if err := h.put(key, serverGroup); err != nil {
-		fmt.Println("could not register HotPath '%s' - %s", key, err)
+func (h *HTTPRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx := ctxPool.Get().(*Context)
+	ctx.Reset()
+	r = r.WithContext(context.WithValue(r.Context(), CtxKey, ctx))
+
+	if handler := h.match(r.URL.Path, ctx); handler != nil {
+		handler.ServeHTTP(w, r)
+		fmt.Println(ctx.Params)
+		ctxPool.Put(ctx)
+		return
+	}
+
+	http.NotFound(w, r)
+	ctxPool.Put(ctx)
+}
+
+func (h *HTTPRouter) Handle(path string, serverGroup *ServerGroup) error {
+	if h.tree == nil {
+		h.tree = &tree{}
+	}
+	if err := h.tree.handle(path, serverGroup); err != nil {
+		fmt.Printf("could not register HotPath '%s' - %s", path, err)
 		return err
 	}
 	return nil
 }
 
-func (h *HttpRouter) Get(key string) http.Handler {
+func (h *HTTPRouter) match(path string, ctx *Context) http.Handler {
 	var sg *ServerGroup
-	if sg = h.get(key); sg == nil {
-		if sg = h.longestPrefix(key); sg == nil {
-			return nil
+	if sg = h.tree.match(path, ctx); sg == nil {
+		if strings.HasSuffix(path, "*") {
+			if sg = h.longestPrefix(path[:len(path)-1], ctx); sg != nil {
+				return sg.leastUsed()
+			}
 		}
+		return nil
 	}
+
 	return sg.leastUsed()
 }
 
-func (h *HttpRouter) Getc(key string) *ServerGroup {
-	return h.getc(key)
-}
-
+// a ternary search trie (tree for the avoidance of pronunciation doubt)
 type tree struct {
-	lt *tree
-	eq *tree
-	gt *tree
-	v  byte
-	sg *ServerGroup
+	lt      *tree
+	eq      *tree
+	gt      *tree
+	v       byte
+	sg      *ServerGroup
+	varName string
 }
 
-func (h *HttpRouter) get(key string) *ServerGroup {
-	l := len(key)
-	n := h.tree
+func (t *tree) String() string {
+	return fmt.Sprintf("[value: %s, t.sg: %v, t.varName: %s]", string(t.v), t.sg, t.varName)
+}
+
+func (t *tree) handle(path string, sg *ServerGroup) error {
+	if sg == nil {
+		panic("nil group")
+	}
+	l := len(path)
+	lastChar := l - 1
+
+	var err error
+	var varEnd int
+
 	for i := 0; i < l; {
-		v := key[i]
-		if n.v == 0x0 {
+		v := path[i]
+		if t.v == 0x0 {
+			t.v = v
+			t.lt = &tree{}
+			t.eq = &tree{}
+			t.gt = &tree{}
+		}
+
+		switch {
+		case v == '/' && path[i+1] == ':':
+			if varEnd, err = routeVarEnd(i, path); err != nil {
+				return err
+			}
+			t = t.gt
+			t.v = ':'
+			t.varName = string(path[i+2 : varEnd])
+			t.lt = &tree{}
+			t.eq = &tree{}
+			t.gt = &tree{}
+
+			i = varEnd
+			if varEnd > lastChar {
+				t.sg = sg
+				return nil
+			}
+
+		case v < t.v:
+			t = t.lt
+
+		case v > t.v:
+			t = t.gt
+
+		case i == lastChar:
+			t.sg = sg
 			return nil
-		} else if v < n.v {
-			n = n.lt
-		} else if v > n.v {
-			n = n.gt
-		} else if (i == len(key)-1) && (n.sg != nil) {
-			return n.sg
-		} else {
-			n = n.eq
+
+		default:
+			t = t.eq
 			i++
 		}
 	}
+
+	return fmt.Errorf("unable to insert handler for key '%s'", path)
+}
+
+func numParams(path string) (n uint) {
+	for i := 0; i < len(path); i++ {
+		if path[i] != ':' && path[i] != '*' {
+			continue
+		}
+		n++
+	}
+
+	return n
+}
+
+func routeVarEnd(start int, path string) (end int, err error) {
+	end = start + 2
+	routeLen := len(path)
+	for end < routeLen && path[end] != '/' {
+		switch path[end] {
+		case ':':
+			return 0, fmt.Errorf("invalid character '%s' in variable name", ":")
+		default:
+			end++
+		}
+	}
+
+	return end, nil
+}
+
+// match the route
+func (t *tree) match(path string, ctx *Context) *ServerGroup {
+	l := len(path)
+	lastChar := l - 1
+
+	for i := 0; i < l; {
+		v := path[i]
+
+		switch {
+		case t.v == 0x0:
+			return nil
+
+		case v == '/' && t.eq.v == '*':
+			return t.eq.sg
+		case v == '/' && t.gt.v == ':':
+			val, end := routeVarGet(i, path)
+			ctx.Params.Add(t.gt.varName, val)
+			if end >= lastChar {
+				return t.gt.sg
+			}
+			i = end
+			t = t.gt.lt
+
+		case v > t.v:
+			t = t.gt
+
+		case v < t.v:
+			t = t.lt
+
+		case i == lastChar && t.sg != nil:
+			return t.sg
+
+		default:
+			t = t.eq
+			i++
+		}
+	}
+
 	return nil
 }
 
-func (h *HttpRouter) longestPrefix(key string) *ServerGroup {
+func routeVarGet(varStart int, path string) (val string, end int) {
+	end = varStart + 1
+	routeLen := len(path)
+	for end < routeLen && path[end] != '/' {
+		switch path[end] {
+		case '/':
+			return path[varStart:end], end
+		default:
+			end++
+		}
+	}
+
+	return path[varStart+1 : end], end
+}
+
+func (h *HTTPRouter) longestPrefix(key string, ctx *Context) *ServerGroup {
 	if len(key) < 1 {
 		return nil
 	}
 
 	length := h.prefix(h.tree, key, 0)
-	return h.get(key[0:length])
+
+	return h.tree.match(key[0:length], ctx)
 }
 
-func (h *HttpRouter) prefix(n *tree, key string, index int) int {
+func (h *HTTPRouter) prefix(n *tree, key string, index int) int {
 	if index == len(key) || n == nil {
 		return 0
 	}
@@ -105,61 +246,4 @@ func (h *HttpRouter) prefix(n *tree, key string, index int) int {
 		return length
 	}
 	return recLen
-}
-
-func (h *HttpRouter) getc(key string) *ServerGroup {
-	l := len(key)
-	n := h.tree
-	for i := 0; i < l; {
-		v := key[i]
-		switch {
-
-		case n.v == 0x0:
-			return nil
-		case v < n.v:
-			n = n.lt
-		case v > n.v:
-			n = n.gt
-		case i == len(key)-1 && n.sg != nil:
-			return n.sg
-		default:
-			n = n.eq
-			i++
-		}
-
-	}
-	return nil
-}
-func (h *HttpRouter) put(key string, group *ServerGroup) error {
-	if group == nil {
-		panic("nil group")
-	}
-	b := []byte(key)
-	n := h.tree
-	if n == nil {
-		n = &tree{}
-		h.tree = n
-	}
-	for i := 0; i < len(b); {
-		v := b[i]
-		if n.v == 0x0 {
-			n.v = v
-			n.lt = &tree{}
-			n.eq = &tree{}
-			n.gt = &tree{}
-		}
-
-		if v < n.v {
-			n = n.lt
-		} else if v > n.v {
-			n = n.gt
-		} else if i == (len(b) - 1) {
-			n.sg = group
-			return nil
-		} else {
-			n = n.eq
-			i++
-		}
-	}
-	return fmt.Errorf("unable to insert handler for key '%s'", key)
 }

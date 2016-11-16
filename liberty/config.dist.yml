@@ -1,0 +1,25 @@
+env: dev
+profiling: false
+profStatsFile: /tmp/liberty.pprof
+
+certs:
+    - {
+        Domain: dev.golang.scot
+        Certfile: ""
+        Keyfile: ""
+    }
+
+proxies:
+    - {
+        hostPath:
+        remoteHost:
+        hostAlias: []
+        hostIP: ""
+        tls: false
+        tlsRedirect: false
+        ws: false
+        handlerType: "web"
+        ips: []
+        cors: []
+    }
+
