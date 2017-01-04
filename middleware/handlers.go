@@ -1,4 +1,4 @@
-package balancer
+package middleware
 
 import (
 	"fmt"
@@ -22,45 +22,12 @@ const (
 	redirectHandler = "redirect"
 )
 
-// Chainable describes a handler which wraps a handler. By design there is no
-// guarantee that a chainable handler will call the next one in the chain. To
-// be chainable the object must also be able to serve HTTP requests and thus
-// it will also itself satisfy the standard library http.Handler interface
-type Chainable interface {
-	Chain(h http.Handler) http.Handler
-}
+type HelloWorld struct{}
 
-// Chain is a series of chainable http handlers
-type Chain struct {
-	handlers []Chainable
-}
-
-// NewChain initiates the chain
-func NewChain(handlers ...Chainable) Chain {
-	ch := Chain{}
-	ch.handlers = append(ch.handlers, handlers...)
-	return ch
-}
-
-// Link the chain
-func (ch Chain) Link(h http.Handler) http.Handler {
-	var last http.Handler
-
-	if h == nil {
-		last = http.DefaultServeMux
-	} else {
-		last = h
-	}
-
-	for i := len(ch.handlers) - 1; i >= 0; i-- {
-		last = ch.handlers[i].Chain(last)
-	}
-
-	return last
-}
-
-func HelloHandler(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("Hello World!"))
+func (hw *HelloWorld) Chain(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("Hello World!"))
+	})
 }
 
 type GoGet struct {
@@ -226,91 +193,6 @@ func (ih *InstrumentedHandler) Chain(h http.Handler) http.Handler {
 	return http.HandlerFunc(prometheus.InstrumentHandler(ih.Name, h))
 }
 
-// ApiHandler further restricts access to the API. Only certain endpoints are
-// open by default, and even open paths can have further IP or hostname based
-// restrictions. This is the second layer of the onion, the first potentially
-// being an IPRestrictedHandler
-type ApiHandler struct {
-	Whitelist *trie.Trie
-}
-
-// an apiWhitelist is a slice of allowed ip nets and/or a slice of remote hostnames
-type apiWhitelist struct {
-	ips   []*net.IPNet
-	hosts []string
-}
-
-func (a *apiWhitelist) hasIP(ip net.IP) bool {
-	for _, ipNet := range a.ips {
-		if ipNet.Contains(ip) {
-			return true
-		}
-	}
-	return false
-}
-func (a *apiWhitelist) hasHost(ip net.IP) bool {
-	if len(a.hosts) == 0 {
-		return false
-	}
-	names, err := net.LookupAddr(ip.String())
-	if err != nil {
-		return false
-	}
-
-	for _, host := range a.hosts {
-		for _, name := range names {
-			if strings.HasSuffix(name, host) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func (a *apiWhitelist) allows(ip net.IP) bool {
-	return a.hasIP(ip) || a.hasHost(ip)
-}
-
-func NewApiHandler(p *Proxy) *ApiHandler {
-	openAPI = &trie.Trie{}
-	for _, wl := range conf.Whitelist {
-		nets := ips2nets(wl.IPs)
-		awl := &apiWhitelist{nets, wl.Hostnames}
-		openAPI.Put(wl.Path, awl)
-	}
-	return &ApiHandler{Whitelist: openAPI}
-}
-
-func (ah *ApiHandler) Chain(h http.Handler) http.Handler {
-	appEnv := env.Get()
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// if url path is a sub path of a whitelisted prefex e.g. the path is
-		// /api/foo/bar and the whitelist contains /api/foo then this will be
-		// allowed. Similarly we will proceed if the path and registered path
-		// prefix match exactly.
-		if key := ah.Whitelist.LongestPrefix(r.URL.String()); key != "" {
-			// get the whitelist for this endpoint and check any further restrictions
-			if awl, ok := ah.Whitelist.Get(key).(*apiWhitelist); ok {
-				// if we have no IP/host restrictions chain the request
-				if (len(awl.ips) == 0) && (len(awl.hosts) == 0) {
-					h.ServeHTTP(w, r)
-					return
-				}
-
-				// check further IP/host restrictions
-				if remoteIP, err := parseForwarderIP(r, appEnv); err == nil {
-					if awl.allows(remoteIP) {
-						h.ServeHTTP(w, r)
-						return
-					}
-				}
-			}
-		}
-		// at this point the remote IP is not in the whitelist, or the api
-		// endpoint doesn't have an entry
-		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
-	})
-}
 func redir(w http.ResponseWriter, r *http.Request) {
 	url := fmt.Sprintf("https://%s%s", r.Host, r.RequestURI)
 	http.Redirect(w, r, url, 302)

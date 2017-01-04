@@ -43,7 +43,14 @@ func main() {
 	flag.Parse()
 
 	http.DefaultTransport.(*http.Transport).MaxIdleConnsPerHost = 100
-	bl := balancer.NewBalancer()
+	config := CurrentConfig()
+	balancerConfig := &balancer.Config{
+		Certs:     config.Certs,
+		Proxies:   config.Proxies,
+		Whitelist: config.Whitelist,
+	}
+
+	bl := balancer.NewBalancer(balancerConfig)
 
 	glog.Infoln("Router is bootstrapped, listening for connections...")
 	if err := bl.Balance(balancer.Default); err != nil {

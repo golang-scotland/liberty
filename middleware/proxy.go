@@ -1,4 +1,4 @@
-package balancer
+package middleware
 
 import (
 	"fmt"
@@ -7,6 +7,8 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+
+	"golang.scot/liberty/env"
 
 	"github.com/gnanderson/trie"
 	"github.com/prometheus/client_golang/prometheus"
@@ -27,18 +29,18 @@ type Proxy struct {
 	HandlerType   string   `yaml:"handlerType"`
 	IPs           []string `yaml:"ips, flow"`
 	Cors          []string `yaml:"cors, flow"`
-	servers       []*http.Server
+	Servers       []*http.Server
 }
 
 // Configure a proxy for use with the paramaters from the parsed yaml config. If
 // a remote host resolves to more than one IP address, we'll create a server and
 // for each. This works because under the hood we're using SO_REUSEPORT.
-func (p *Proxy) Configure() error {
+func (p *Proxy) Configure(whitelist []*ApiWhitelist) error {
 	p.normalise()
 	if err := p.parseRemoteHost(); err != nil {
 		return err
 	}
-	if err := p.initServers(); err != nil {
+	if err := p.initServers(whitelist); err != nil {
 		return err
 	}
 	return nil
@@ -120,7 +122,7 @@ func (p *Proxy) parseRemoteHost() error {
 	return nil
 }
 
-func (p *Proxy) initServers() error {
+func (p *Proxy) initServers(whitelist []*ApiWhitelist) error {
 	// add an additional redirect from port 80
 	if p.TlsRedirect && p.HostPort == 443 {
 		s := &http.Server{
@@ -129,7 +131,7 @@ func (p *Proxy) initServers() error {
 		mux := http.NewServeMux()
 		mux.HandleFunc(p.HostPath, redir)
 		s.Handler = mux
-		p.servers = append(p.servers, s)
+		p.Servers = append(p.Servers, s)
 	}
 
 	// now the server (or servers) for this proxy entry
@@ -139,35 +141,31 @@ func (p *Proxy) initServers() error {
 		}
 		mux := http.NewServeMux()
 
-		if p.Tls {
-			setTLSConfig(s)
-		}
-
 		// if this is a websocket proxy, we need to hijack the connection. We'll
 		// have to treat this a little differently.
 		if p.Ws {
 			mux.Handle(p.HostPath, websocketProxy(p.RemoteHost))
 			s.Handler = mux
-			p.servers = append(p.servers, s)
+			p.Servers = append(p.Servers, s)
 			continue
 		}
 
 		remoteShard := strings.Replace(p.RemoteHost, p.remoteHostURL.Host, addr.String(), 1)
 		fmt.Printf("remote shard url: %s\n", remoteShard)
-		err := reverseProxy(p, mux, remoteShard)
+		err := reverseProxy(p, mux, remoteShard, whitelist)
 		if err != nil {
 			return err
 		}
 
 		s.Handler = mux
-		p.servers = append(p.servers, s)
+		p.Servers = append(p.Servers, s)
 	}
 	return nil
 }
 
 // build a chain of handlers, with the last one actually performing the reverse
 // proxy to the remote resource.
-func reverseProxy(p *Proxy, mux *http.ServeMux, remoteUrl string) error {
+func reverseProxy(p *Proxy, mux *http.ServeMux, remoteUrl string, whitelist []*ApiWhitelist) error {
 
 	// if this remote host is not a valid resource we can't continue
 	remote, err := url.Parse(remoteUrl)
@@ -190,7 +188,7 @@ func reverseProxy(p *Proxy, mux *http.ServeMux, remoteUrl string) error {
 		// if this is also an API handler, pass in the open paths
 		if restricted.handlerType == apiHandler {
 			restricted.openPaths = &trie.Trie{}
-			for _, wl := range conf.Whitelist {
+			for _, wl := range whitelist {
 				restricted.openPaths.Put(wl.Path, true)
 			}
 		}
@@ -215,10 +213,10 @@ func reverseProxy(p *Proxy, mux *http.ServeMux, remoteUrl string) error {
 		//final = GoGetHandler(reverseProxy)
 		final = reverseProxy
 	case apiHandler:
-		handlers = append(handlers, NewApiHandler(p))
+		handlers = append(handlers, NewApiHandler(whitelist))
 		final = reverseProxy
 	case promHandler:
-		final = prometheus.InstrumentHandler(hostname, prometheus.Handler())
+		final = prometheus.InstrumentHandler(env.Hostname(), prometheus.Handler())
 	case redirectHandler:
 		final = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, fmt.Sprintf("%s/%s", p.RemoteHost, r.URL.Path), 302)

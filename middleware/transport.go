@@ -1,4 +1,4 @@
-package balancer
+package middleware
 
 import (
 	"net/http"
@@ -26,8 +26,6 @@ func (t *Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 		resp.Header.Set("Vary", "Accept-Encoding")
 		resp.Header.Set("Server", "Liberty")
 		resp.Header.Set("X-Frame-Options", "SAMEORIGIN")
-		resp.Header.Set("X-Powered-By", runtimeVer)
-		resp.Header.Set("X-Id", hostname)
 		/*setEtag(resp)
 		if eTagMatch(r, resp) {
 			return resp, nil

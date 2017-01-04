@@ -52,3 +52,12 @@ func Set(e Env) error {
 	}
 	return nil
 }
+
+func Hostname() (host string) {
+	var err error
+	if host, err = os.Hostname(); err == nil {
+		return host
+	}
+
+	panic(err.Error())
+}

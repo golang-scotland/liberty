@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"golang.scot/liberty/middleware"
 	"golang.scot/liberty/router"
 
 	"github.com/facebookgo/grace/gracehttp"
@@ -20,25 +21,38 @@ const (
 // Balancer is a balanced reverse HTTP proxy
 type Balancer struct {
 	config *Config
-	groups map[string]*router.ServerGroup
+	groups map[string]*ServerGroup
 	router *router.HTTPRouter
 }
 
+type Config struct {
+	Certs     []*Crt                     `yaml:"certs"`
+	Proxies   []*middleware.Proxy        `yaml:"proxies"`
+	Whitelist []*middleware.ApiWhitelist `yaml:"whitelist"`
+}
+
 // NewBalancer returns a Balancer configured for use
-func NewBalancer() *Balancer {
+func NewBalancer(config *Config) *Balancer {
 	b := &Balancer{
-		config: conf,
-		groups: map[string]*router.ServerGroup{},
+		config: config,
+		groups: map[string]*ServerGroup{},
 		router: &router.HTTPRouter{},
 	}
 
 	for _, proxy := range b.config.Proxies {
-		err := proxy.Configure()
+		err := proxy.Configure(b.config.Whitelist)
 		if err != nil {
 			fmt.Printf("the proxy for '%s' was not configured - %s", proxy.HostPath, err)
 			continue
 		}
-		b.groups[proxy.HostPath] = router.NewServerGroup(b.router, proxy.servers)
+		// set TLS options on the proxy servers
+		if proxy.Tls {
+			for i := range proxy.Servers {
+				setTLSConfig(proxy.Servers[i], config.Certs)
+			}
+		}
+
+		b.groups[proxy.HostPath] = NewServerGroup(b.router, proxy.Servers)
 		err = b.router.Handle("/", b.groups[proxy.HostPath])
 		//err = b.router.Handle(proxy.HostPath, b.groups[proxy.HostPath])
 		if err != nil {

@@ -5,7 +5,10 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	"golang.scot/liberty/middleware"
 )
 
 /*func TestExactMatch(t *testing.T) {
@@ -21,19 +24,35 @@ import (
 }
 */
 
-func newServerGroup() *ServerGroup {
+func newServerGroup() http.Handler {
 	mux := http.NewServeMux()
-	return &ServerGroup{servers: []*server{{s: &http.Server{Handler: mux}, handler: mux}}}
+	return mux
+	//return &balancer.ServerGroup{servers: []*server{{s: &http.Server{Handler: mux}, handler: mux}}}
+}
+
+func httpWriterRequest(urlPath string) (http.ResponseWriter, *http.Request) {
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", urlPath, nil)
+	return w, req
+}
+
+func newRouter() *HTTPRouter {
+	router := NewHTTPRouter()
+	router.Use(
+		[]middleware.Chainable{&middleware.HelloWorld{}},
+	)
+
+	return router
 }
 
 func TestRouteMatch(t *testing.T) {
+	router := newRouter()
+	mux := http.NewServeMux()
 
-	router := NewHTTPRouter()
-	sg := newServerGroup()
 	ctx := ctxPool.Get().(*Context)
 	ctx.Reset()
 
-	if err := router.Handle("/test/example/path", sg); err != nil {
+	if err := router.Handle("/test/example/path", mux); err != nil {
 		t.Error(err)
 	}
 	match := router.match("/test/example/path", ctx)
@@ -41,8 +60,8 @@ func TestRouteMatch(t *testing.T) {
 		t.Errorf("bad search:")
 	}
 
-	if fmt.Sprintf("%p", sg.servers[0].handler) != fmt.Sprintf("%p", match) {
-		t.Errorf("address mismatch: - h: %#v,  match: %#v", sg, match)
+	if fmt.Sprintf("%p", mux) != fmt.Sprintf("%p", match) {
+		t.Errorf("address mismatch: - h: %#v,  match: %#v", mux, match)
 	}
 
 	ctxPool.Put(ctx)
@@ -51,11 +70,12 @@ func TestRouteMatch(t *testing.T) {
 func TestMatchLastVar(t *testing.T) {
 
 	router := NewHTTPRouter()
-	sg := newServerGroup()
+	mux := http.NewServeMux()
 	ctx := ctxPool.Get().(*Context)
 	ctx.Reset()
+	//w := httptest.NewRecorder()
 
-	if err := router.Handle("/test/:var1", sg); err != nil {
+	if err := router.Handle("/test/:var1", mux); err != nil {
 		t.Error(err)
 	}
 
@@ -64,8 +84,8 @@ func TestMatchLastVar(t *testing.T) {
 		t.Errorf("bad search:")
 	}
 
-	if fmt.Sprintf("%p", sg.servers[0].handler) != fmt.Sprintf("%p", match) {
-		t.Errorf("address mismatch: - h: %#v,  match: %#v", sg, match)
+	if fmt.Sprintf("%p", mux) != fmt.Sprintf("%p", match) {
+		t.Errorf("address mismatch: - h: %#v,  match: %#v", mux, match)
 	}
 
 	ctxPool.Put(ctx)
@@ -74,11 +94,11 @@ func TestMatchLastVar(t *testing.T) {
 func TestRouteMatchOneVar(t *testing.T) {
 
 	router := NewHTTPRouter()
-	sg := newServerGroup()
+	mux := http.NewServeMux()
 	ctx := ctxPool.Get().(*Context)
 	ctx.Reset()
 
-	if err := router.Handle("/test/:varone/bar", sg); err != nil {
+	if err := router.Handle("/test/:varone/bar", mux); err != nil {
 		t.Error(err)
 	}
 
@@ -87,8 +107,8 @@ func TestRouteMatchOneVar(t *testing.T) {
 		t.Errorf("bad search:")
 	}
 
-	if fmt.Sprintf("%p", sg.servers[0].handler) != fmt.Sprintf("%p", match) {
-		t.Errorf("address mismatch: - h: %#v,  match: %#v", sg, match)
+	if fmt.Sprintf("%p", mux) != fmt.Sprintf("%p", match) {
+		t.Errorf("address mismatch: - h: %#v,  match: %#v", mux, match)
 	}
 
 	ctxPool.Put(ctx)
@@ -97,11 +117,11 @@ func TestRouteMatchOneVar(t *testing.T) {
 func TestRouteMatchTwoVar(t *testing.T) {
 
 	router := NewHTTPRouter()
-	sg := newServerGroup()
+	mux := http.NewServeMux()
 	ctx := ctxPool.Get().(*Context)
 	ctx.Reset()
 
-	if err := router.Handle("/test/example/:var1/path/:var2", sg); err != nil {
+	if err := router.Handle("/test/example/:var1/path/:var2", mux); err != nil {
 		t.Error(err)
 	}
 
@@ -110,8 +130,8 @@ func TestRouteMatchTwoVar(t *testing.T) {
 		t.Errorf("bad search:")
 	}
 
-	if fmt.Sprintf("%p", sg.servers[0].handler) != fmt.Sprintf("%p", match) {
-		t.Errorf("address mismatch: - h: %#v,  match: %#v", sg, match)
+	if fmt.Sprintf("%p", mux) != fmt.Sprintf("%p", match) {
+		t.Errorf("address mismatch: - h: %#v,  match: %#v", mux, match)
 	}
 
 	ctxPool.Put(ctx)
@@ -121,12 +141,29 @@ func TestRouteMatchLongest(t *testing.T) {
 
 	router := &HTTPRouter{}
 	mux := http.NewServeMux()
-	sg := &ServerGroup{servers: []*server{{s: &http.Server{Handler: mux}, handler: mux}}}
 	ctx := ctxPool.Get().(*Context)
 	ctx.Reset()
 
-	router.Handle("http://www.example.com/*", sg)
+	router.Handle("http://www.example.com/*", mux)
 	match := router.match("http://www.example.com/foo/", ctx)
+	if match == nil {
+		t.Errorf("bad search:")
+	}
+	if fmt.Sprintf("%p", mux) != fmt.Sprintf("%p", match) {
+		t.Errorf("address mismatch: - h: %#v,  match: %#v", mux, match)
+	}
+
+	ctxPool.Put(ctx)
+}
+
+func TestBenchFail(t *testing.T) {
+	router := &HTTPRouter{}
+	mux := http.NewServeMux()
+	ctx := ctxPool.Get().(*Context)
+	ctx.Reset()
+	testRoute := "/users/:user/following"
+	router.Handle(testRoute, mux)
+	match := router.match("/users/foobar/following", ctx)
 	if match == nil {
 		t.Errorf("bad search:")
 	}
@@ -212,42 +249,48 @@ func loadGithubApi(cb func(string) error) {
 }
 
 func BenchmarkTreeGet1000(b *testing.B) {
-	router := &HTTPRouter{}
+	router := newRouter()
 	sg := newServerGroup()
 	loadGithubApi(func(key string) error {
 		return router.Handle(key, sg)
 	})
 
+	w, req := httpWriterRequest("/user/repos")
+
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	ctx := ctxPool.Get().(*Context)
-	ctx.Reset()
+	//ctx := ctxPool.Get().(*Context)
+	//ctx.Reset()
 
 	for n := 0; n < b.N; n++ {
-		_ = router.match("/user/repos", ctx)
+		router.ServeHTTP(w, req)
+		//	_ = router.match("/user/repos", ctx)
 	}
 
-	ctxPool.Put(ctx)
+	//ctxPool.Put(ctx)
 }
 
 func BenchmarkTreeGetVar1000(b *testing.B) {
-	router := &HTTPRouter{}
+	router := newRouter()
 	sg := newServerGroup()
 
 	loadGithubApi(func(key string) error {
 		return router.Handle(key, sg)
 	})
 
+	w, req := httpWriterRequest("/user/repos")
+
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	ctx := ctxPool.Get().(*Context)
-	ctx.Reset()
+	//ctx := ctxPool.Get().(*Context)
+	//ctx.Reset()
 
 	for n := 0; n < b.N; n++ {
-		_ = router.match("/users/graham/gists", ctx)
+		router.ServeHTTP(w, req)
+		//_ = router.match("/users/graham/gists", ctx)
 	}
 
-	ctxPool.Put(ctx)
+	//ctxPool.Put(ctx)
 }
