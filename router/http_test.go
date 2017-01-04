@@ -67,6 +67,32 @@ func TestRouteMatch(t *testing.T) {
 	ctxPool.Put(ctx)
 }
 
+func TestBenchMatchFail01(t *testing.T) {
+	testPath := "/test/test/test/test/test"
+	fiveColon := "/:a/:b/:c/:d/:e"
+
+	router := newRouter()
+	mux := http.NewServeMux()
+
+	ctx := ctxPool.Get().(*Context)
+	ctx.Reset()
+
+	if err := router.Handle(fiveColon, mux); err != nil {
+		t.Error(err)
+	}
+	match := router.match(testPath, ctx)
+	if match == nil {
+		t.Errorf("bad search:")
+	}
+
+	if fmt.Sprintf("%p", mux) != fmt.Sprintf("%p", match) {
+		t.Errorf("address mismatch: - h: %#v,  match: %#v", mux, match)
+	}
+
+	ctxPool.Put(ctx)
+
+}
+
 func TestMatchLastVar(t *testing.T) {
 
 	router := NewHTTPRouter()
