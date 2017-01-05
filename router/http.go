@@ -118,6 +118,8 @@ func (t *tree) handle(path string, handler http.Handler) error {
 				return nil
 			}
 
+			t = t.lt
+
 		case v < t.v:
 			t = t.lt
 

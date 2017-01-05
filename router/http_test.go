@@ -67,7 +67,7 @@ func TestRouteMatch(t *testing.T) {
 	ctxPool.Put(ctx)
 }
 
-func TestBenchMatchFail01(t *testing.T) {
+func TestFiveDeep(t *testing.T) {
 	testPath := "/test/test/test/test/test"
 	fiveColon := "/:a/:b/:c/:d/:e"
 
@@ -170,8 +170,8 @@ func TestRouteMatchLongest(t *testing.T) {
 	ctx := ctxPool.Get().(*Context)
 	ctx.Reset()
 
-	router.Handle("http://www.example.com/*", mux)
-	match := router.match("http://www.example.com/foo/", ctx)
+	router.Handle("/www.example.com/*", mux)
+	match := router.match("/www.example.com/foo/", ctx)
 	if match == nil {
 		t.Errorf("bad search:")
 	}
