@@ -93,6 +93,63 @@ func TestFiveDeep(t *testing.T) {
 
 }
 
+func TestColonValues(t *testing.T) {
+	testPath := "/foo/:bar/baz"
+	testRoute := "/foo/:bar/baz"
+
+	router := newRouter()
+	mux := http.NewServeMux()
+
+	ctx := ctxPool.Get().(*Context)
+	ctx.Reset()
+
+	if err := router.Handle(testRoute, mux); err != nil {
+		t.Error(err)
+	}
+	match := router.match(testPath, ctx)
+	if match == nil {
+		t.Errorf("bad search:")
+	}
+
+	if fmt.Sprintf("%p", mux) != fmt.Sprintf("%p", match) {
+		t.Errorf("address mismatch: - h: %#v,  match: %#v", mux, match)
+	}
+	if ctx.Params.Get("bar") != ":bar" {
+		t.Errorf("value mismatch: - h: %s  match: %s", ":bar", ctx.Params.Get("bar"))
+	}
+	ctxPool.Put(ctx)
+
+}
+
+func TestMiddlePlaced(t *testing.T) {
+	testPath := "/repos/graham/liberty/stargazers"
+	testRoute := "/repos/:owner/:repo/stargazers"
+
+	router := newRouter()
+	mux := http.NewServeMux()
+
+	ctx := ctxPool.Get().(*Context)
+	ctx.Reset()
+
+	if err := router.Handle(testRoute, mux); err != nil {
+		t.Error(err)
+	}
+	match := router.match(testPath, ctx)
+	if match == nil {
+		t.Errorf("bad search:")
+	}
+
+	if fmt.Sprintf("%p", mux) != fmt.Sprintf("%p", match) {
+		t.Errorf("address mismatch: - h: %#v,  match: %#v", mux, match)
+	}
+	if ctx.Params.Get("owner") != "graham" {
+		t.Errorf("value mismatch: - h: %s  match: %s", "graham", ctx.Params.Get("owner"))
+	}
+
+	ctxPool.Put(ctx)
+
+}
+
 func TestMatchLastVar(t *testing.T) {
 
 	router := NewHTTPRouter()

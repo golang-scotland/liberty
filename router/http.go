@@ -166,22 +166,23 @@ func routeVarEnd(start int, path string) (end int, err error) {
 }
 
 func (t *tree) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context().Value(CtxKey).(*Context)
+	ctx := ctxPool.Get().(*Context)
+	//ctx := r.Context().Value(CtxKey).(*Context)
 
 	h := t.match(r.URL.Path, ctx)
 	if h == nil {
-		fmt.Println(r.URL.Path)
-		fmt.Println(ctx)
-		panic("no MATCH")
 		http.NotFound(w, r)
+		return
 	}
 
 	h.ServeHTTP(w, r)
+	ctxPool.Put(ctx)
 }
 
 // match the route
 func (t *tree) match(path string, ctx *Context) http.Handler {
-	var end int
+	var matchEnd int
+	var matchedVal string
 
 	for i := 0; i < len(path); {
 		v := path[i]
@@ -193,16 +194,20 @@ func (t *tree) match(path string, ctx *Context) http.Handler {
 		case v == '/' && t.eq.v == '*':
 			return t.eq.h
 		case v == '/' && t.gt.v == ':':
-			for end = i + 1; end < len(path) && path[end] != '/'; end++ {
-				if path[end] == '/' {
-					ctx.Params.Add(t.gt.varName, path[i:end])
-				}
-			}
+			for matchEnd = i + 1; matchEnd < len(path) && path[matchEnd] != '/'; matchEnd++ {
+				if matchEnd == len(path)-1 {
+					matchedVal = path[i+1 : matchEnd]
 
-			if end >= len(path)-1 {
+				} else {
+					matchedVal = path[i+1 : matchEnd+1]
+				}
+
+			}
+			ctx.Params.Add(t.gt.varName, matchedVal)
+			if matchEnd >= len(path)-1 {
 				return t.gt.h
 			}
-			i = end
+			i = matchEnd
 			t = t.gt.lt
 
 		case v > t.v:

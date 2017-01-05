@@ -26,7 +26,7 @@ type HelloWorld struct{}
 
 func (hw *HelloWorld) Chain(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("Hello World!"))
+		//w.Write([]byte("Hello World!"))
 	})
 }
 
