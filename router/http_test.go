@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/pressly/chi"
+
 	"golang.scot/liberty/middleware"
 )
 
@@ -367,15 +369,29 @@ func BenchmarkTreeGet1000(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	//ctx := ctxPool.Get().(*Context)
-	//ctx.Reset()
+	for n := 0; n < b.N; n++ {
+		router.ServeHTTP(w, req)
+	}
+}
+
+func BenchmarkChiGet1000(b *testing.B) {
+	router := chi.NewRouter()
+	sg := newServerGroup()
+	loadGithubApi(func(key string) error {
+		router.Get(key, func(w http.ResponseWriter, r *http.Request) {
+			sg.ServeHTTP(w, r)
+		})
+		return nil
+	})
+
+	w, req := httpWriterRequest("/user/repos")
+
+	b.ReportAllocs()
+	b.ResetTimer()
 
 	for n := 0; n < b.N; n++ {
 		router.ServeHTTP(w, req)
-		//	_ = router.match("/user/repos", ctx)
 	}
-
-	//ctxPool.Put(ctx)
 }
 
 func BenchmarkTreeGetVar1000(b *testing.B) {
@@ -391,13 +407,7 @@ func BenchmarkTreeGetVar1000(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	//ctx := ctxPool.Get().(*Context)
-	//ctx.Reset()
-
 	for n := 0; n < b.N; n++ {
 		router.ServeHTTP(w, req)
-		//_ = router.match("/users/graham/gists", ctx)
 	}
-
-	//ctxPool.Put(ctx)
 }

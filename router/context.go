@@ -39,8 +39,8 @@ type ctxKey struct {
 	name string
 }
 
-func (k *ctxKey) String() string {
-	return "router context " + k.name
+func (key *ctxKey) String() string {
+	return "router context " + key.name
 }
 
 var (
