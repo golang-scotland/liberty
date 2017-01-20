@@ -3,7 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
+	"os/signal"
+	"runtime/pprof"
+	"syscall"
 
 	"net/http"
 	_ "net/http/pprof"
@@ -23,8 +27,9 @@ const (
 )
 
 var (
-	addr      = flag.String("addr", defaultAddr, "The address to bind to.")
-	cacheReqs = flag.Bool("cache", false, "Cache requests from backends.")
+	addr       = flag.String("addr", defaultAddr, "The address to bind to.")
+	cacheReqs  = flag.Bool("cache", false, "Cache requests from backends.")
+	cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 )
 
 // print the usage help text for --help / -h
@@ -41,22 +46,43 @@ func usage() {
 func main() {
 	flag.Usage = usage
 	flag.Parse()
+	sigs := make(chan os.Signal, 1)
+	done := make(chan bool, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
-	http.DefaultTransport.(*http.Transport).MaxIdleConnsPerHost = 100
-	config := CurrentConfig()
-	balancerConfig := &balancer.Config{
-		Certs:     config.Certs,
-		Proxies:   config.Proxies,
-		Whitelist: config.Whitelist,
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
 	}
 
-	bl := balancer.NewBalancer(balancerConfig)
+	go func() {
+		http.DefaultTransport.(*http.Transport).MaxIdleConnsPerHost = 100
+		config := CurrentConfig()
+		balancerConfig := &balancer.Config{
+			Certs:     config.Certs,
+			Proxies:   config.Proxies,
+			Whitelist: config.Whitelist,
+		}
 
-	glog.Infoln("Router is bootstrapped, listening for connections...")
-	if err := bl.Balance(balancer.Default); err != nil {
-		glog.Errorf("Fatal error starting load balancer: %s, %t\n", err, err)
-	}
+		bl := balancer.NewBalancer(balancerConfig)
 
+		glog.Infoln("Router is bootstrapped, listening for connections...")
+		if err := bl.Balance(balancer.Default); err != nil {
+			glog.Errorf("Fatal error starting load balancer: %s, %t\n", err, err)
+		}
+	}()
+
+	go func() {
+		sig := <-sigs
+		fmt.Println(sig)
+		done <- true
+	}()
+
+	<-done
 	// DO NOT REMOVE
 	glog.Flush()
 }

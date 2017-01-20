@@ -1,7 +1,10 @@
 package balancer
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
+	"log"
 	"net"
 	"net/http"
 	"sort"
@@ -9,8 +12,15 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"golang.org/x/crypto/acme"
+	"golang.org/x/crypto/acme/autocert"
+
+	"golang.scot/liberty/env"
+
 	"golang.scot/liberty/router"
 )
+
+const letsEncryptSandboxUrl = "https://acme-staging.api.letsencrypt.org/directory"
 
 // Crt defines a domain, certificate and keyfile
 type Crt struct {
@@ -55,7 +65,7 @@ type ServerGroup struct {
 
 // NewServerGroup creates a server group from a router and a slice of standard
 // library http servers
-func NewServerGroup(router *router.HTTPRouter, servers []*http.Server) *ServerGroup {
+func NewServerGroup(router *router.Router, servers []*http.Server) *ServerGroup {
 	sg := &ServerGroup{
 		w:       &sync.Mutex{},
 		servers: []*server{},
@@ -132,7 +142,7 @@ func setTLSConfig(s *http.Server, certs []*Crt) {
 		config.NextProtos = []string{"http/1.1"}
 	}
 
-	var err error
+	/*var err error
 	config.Certificates = make([]tls.Certificate, len(certs))
 	for i := 0; i < len(certs); i++ {
 		config.Certificates[i], err = tls.LoadX509KeyPair(
@@ -142,9 +152,41 @@ func setTLSConfig(s *http.Server, certs []*Crt) {
 			panic(err)
 		}
 	}
+	*/
+	// Lets Encrypt!
+	certManager := newAutocertManager()
+	config.GetCertificate = certManager.GetCertificate
+
 	// this will invoke SNI extensions. Note that some (typically older) clients
 	// don't support this.
 	config.BuildNameToCertificate()
 
 	s.TLSConfig = config
+}
+
+func newAutocertManager() *autocert.Manager {
+	m := &autocert.Manager{
+		Cache:  autocert.DirCache("/Users/graham/tmp/acme"),
+		Email:  "graham.anderson@gmail.com",
+		Prompt: autocert.AcceptTOS,
+		HostPolicy: autocert.HostWhitelist(
+			"excession.golang.scot",
+		),
+	}
+
+	return m
+}
+
+func newAcmeClient() *acme.Client {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		log.Fatal(err)
+	}
+	client := &acme.Client{Key: key}
+
+	if env.Get() != env.Prod {
+		client.DirectoryURL = letsEncryptSandboxUrl
+	}
+
+	return client
 }

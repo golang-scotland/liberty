@@ -22,7 +22,7 @@ const (
 type Balancer struct {
 	config *Config
 	groups map[string]*ServerGroup
-	router *router.HTTPRouter
+	router *router.Router
 }
 
 type Config struct {
@@ -36,7 +36,7 @@ func NewBalancer(config *Config) *Balancer {
 	b := &Balancer{
 		config: config,
 		groups: map[string]*ServerGroup{},
-		router: &router.HTTPRouter{},
+		router: router.NewHTTPRouter(),
 	}
 
 	for _, proxy := range b.config.Proxies {
@@ -53,7 +53,7 @@ func NewBalancer(config *Config) *Balancer {
 		}
 
 		b.groups[proxy.HostPath] = NewServerGroup(b.router, proxy.Servers)
-		err = b.router.Handle("/", b.groups[proxy.HostPath])
+		err = b.router.Get("/", b.groups[proxy.HostPath])
 		//err = b.router.Handle(proxy.HostPath, b.groups[proxy.HostPath])
 		if err != nil {
 			fmt.Printf("unable to register the HostPath '%s' with this route", proxy.HostPath)

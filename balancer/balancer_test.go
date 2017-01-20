@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"testing"
 	"time"
+
+	"golang.scot/liberty/middleware"
 )
 
 func newProxy(addr string) *httputil.ReverseProxy {
@@ -39,19 +41,19 @@ func TestReusePort(t *testing.T) {
 		addrs[i-1] = addr
 	}
 
-	conf = &Config{
-		Proxies: []*Proxy{
+	conf := &Config{
+		Proxies: []*middleware.Proxy{
 			{
 				HostPath:    "127.0.0.1:8989/",
 				RemoteHost:  "127.0.0.1:3456",
 				HostIP:      "127.0.0.1",
 				HostPort:    8989,
-				remoteAddrs: addrs,
+				RemoteAddrs: addrs,
 			},
 		},
 	}
 
-	balancer := NewBalancer()
+	balancer := NewBalancer(conf)
 
 	var balanceErr error
 	go func() {
@@ -74,7 +76,7 @@ func TestReusePort(t *testing.T) {
 
 	var one, two, three int
 
-	for i := 0; i <= 100; i++ {
+	for i := 0; i <= 1; i++ {
 
 		go func() {
 			resp, err := c.Get("http://127.0.0.1:8989/")
