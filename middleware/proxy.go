@@ -8,10 +8,7 @@ import (
 	"net/url"
 	"strings"
 
-	"golang.scot/liberty/env"
-
 	"github.com/gnanderson/trie"
-	"github.com/prometheus/client_golang/prometheus"
 )
 
 // Proxy defines the configuration of a reverse proxy entry in the router.
@@ -19,7 +16,7 @@ type Proxy struct {
 	HostPath      string `yaml:"hostPath"`
 	RemoteHost    string `yaml:"remoteHost"`
 	remoteHostURL *url.URL
-	remoteAddrs   []*net.TCPAddr
+	RemoteAddrs   []*net.TCPAddr
 	HostAlias     []string `yaml:"hostAlias"`
 	HostIP        string   `yaml:"hostIP"`
 	HostPort      int      `yaml:"hostPort"`
@@ -103,11 +100,14 @@ func (p *Proxy) parseRemoteHost() error {
 	}
 	p.remoteHostURL = remote
 
+	// now lookup the IP addresses for this, we would typically expect the remote
+	// hose name to hanve one or more IP records in DNS or /hosts
 	ips, err := net.LookupIP(remoteHost)
 	if err != nil {
 		return fmt.Errorf("error in IP lookup for remote host '%s' - %s", remoteHost, err)
 	}
-	if p.remoteAddrs == nil {
+
+	if p.RemoteAddrs == nil {
 		addrs := make([]*net.TCPAddr, len(ips), len(ips))
 		for i, ip := range ips {
 			addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%s", ip, remotePort))
@@ -116,9 +116,10 @@ func (p *Proxy) parseRemoteHost() error {
 			}
 			addrs[i] = addr
 		}
-		p.remoteAddrs = addrs
+		p.RemoteAddrs = addrs
 	}
-	fmt.Printf("IP's for proxy backend: %#s\n", p.remoteAddrs)
+	fmt.Printf("Backend IP's for proxy: %#s\n", p.RemoteAddrs)
+
 	return nil
 }
 
@@ -135,7 +136,7 @@ func (p *Proxy) initServers(whitelist []*ApiWhitelist) error {
 	}
 
 	// now the server (or servers) for this proxy entry
-	for _, addr := range p.remoteAddrs {
+	for _, addr := range p.RemoteAddrs {
 		s := &http.Server{
 			Addr: fmt.Sprintf("%s:%d", p.HostIP, p.HostPort),
 		}
@@ -160,6 +161,7 @@ func (p *Proxy) initServers(whitelist []*ApiWhitelist) error {
 		s.Handler = mux
 		p.Servers = append(p.Servers, s)
 	}
+
 	return nil
 }
 
@@ -177,7 +179,9 @@ func reverseProxy(p *Proxy, mux *http.ServeMux, remoteUrl string, whitelist []*A
 
 	// the first handler should be a prometheus instrumented handler
 	handlers := make([]Chainable, 0)
-	handlers = append(handlers, &InstrumentedHandler{Name: p.HostPath})
+
+	// @DEPRECATED https://github.com/prometheus/client_golang/issues/200
+	//handlers = append(handlers, &InstrumentedHandler{Name: p.HostPath})
 
 	// next we check for restrictions based on location / IP
 	if len(p.IPs) > 0 {
@@ -215,8 +219,10 @@ func reverseProxy(p *Proxy, mux *http.ServeMux, remoteUrl string, whitelist []*A
 	case apiHandler:
 		handlers = append(handlers, NewApiHandler(whitelist))
 		final = reverseProxy
-	case promHandler:
-		final = prometheus.InstrumentHandler(env.Hostname(), prometheus.Handler())
+	/*
+		case promHandler:
+			final = prometheus.InstrumentHandler(env.Hostname(), prometheus.Handler())
+	*/
 	case redirectHandler:
 		final = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, fmt.Sprintf("%s/%s", p.RemoteHost, r.URL.Path), 302)

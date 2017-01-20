@@ -33,24 +33,40 @@ func (h *HTTPRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPRouter) Use(handlers []middleware.Chainable) {
-	if handlers == nil {
-		h.handler = h.tree
-		return
-	}
 	h.chain = middleware.NewChain(handlers...)
 	h.handler = h.chain.Link(h.tree)
 }
 
-// Handle registers a routing path and http.Handler
-func (h *HTTPRouter) Handle(path string, handler http.Handler) error {
+func (h *HTTPRouter) handle(method method, path string, handler http.Handler) error {
 	if h.tree == nil {
 		h.tree = &tree{}
 	}
-	if err := h.tree.handle(path, handler); err != nil {
+
+	if h.handler == nil {
+		h.handler = h.tree
+	}
+
+	if h.tree.handlers == nil {
+		h.tree.handlers = make(mHandlers, 0)
+	}
+
+	if err := h.tree.handle(method, path, handler); err != nil {
 		fmt.Printf("could not register HotPath '%s' - %s", path, err)
 		return err
 	}
 	return nil
+}
+
+func (h *HTTPRouter) Get(path string, handler http.Handler) error {
+	return h.handle(GET, path, handler)
+}
+
+func (h *HTTPRouter) Post(path string, handler http.Handler) error {
+	return h.handle(POST, path, handler)
+}
+
+func (h *HTTPRouter) Put(path string, handler http.Handler) error {
+	return h.handle(PUT, path, handler)
 }
 
 func (h *HTTPRouter) match(path string, ctx *Context) http.Handler {
@@ -65,182 +81,6 @@ func (h *HTTPRouter) match(path string, ctx *Context) http.Handler {
 	}
 
 	return handler
-}
-
-// a ternary search trie (tree for the avoidance of pronunciation doubt)
-type tree struct {
-	lt      *tree
-	eq      *tree
-	gt      *tree
-	v       byte
-	h       http.Handler
-	varName string
-}
-
-func (t *tree) String() string {
-	return fmt.Sprintf("[value: %s, t.h: %v, t.varName: %s]", string(t.v), t.h, t.varName)
-}
-
-func (t *tree) handle(path string, handler http.Handler) error {
-	if handler == nil {
-		panic("nil group")
-	}
-	l := len(path)
-	lastChar := l - 1
-
-	var err error
-	var varEnd int
-
-	for i := 0; i < l; {
-		v := path[i]
-		if t.v == 0x0 {
-			t.v = v
-			t.lt = &tree{}
-			t.eq = &tree{}
-			t.gt = &tree{}
-		}
-
-		switch {
-		case v == '/' && i != lastChar && path[i+1] == ':':
-			if varEnd, err = routeVarEnd(i, path); err != nil {
-				return err
-			}
-			t = t.gt
-			t.v = ':'
-			t.varName = string(path[i+2 : varEnd])
-			t.lt = &tree{}
-			t.eq = &tree{}
-			t.gt = &tree{}
-
-			i = varEnd
-			if varEnd > lastChar {
-				t.h = handler
-				return nil
-			}
-
-			t = t.lt
-
-		case v < t.v:
-			t = t.lt
-
-		case v > t.v:
-			t = t.gt
-
-		case i == lastChar:
-			t.h = handler
-			return nil
-
-		default:
-			t = t.eq
-			i++
-		}
-	}
-
-	return fmt.Errorf("unable to insert handler for key '%s'", path)
-}
-
-func numParams(path string) (n uint) {
-	for i := 0; i < len(path); i++ {
-		if path[i] != ':' && path[i] != '*' {
-			continue
-		}
-		n++
-	}
-
-	return n
-}
-
-func routeVarEnd(start int, path string) (end int, err error) {
-	end = start + 2
-	routeLen := len(path)
-	for end < routeLen && path[end] != '/' {
-		switch path[end] {
-		case ':':
-			return 0, fmt.Errorf("invalid character '%s' in variable name", ":")
-		default:
-			end++
-		}
-	}
-
-	return end, nil
-}
-
-func (t *tree) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx := ctxPool.Get().(*Context)
-	//ctx := r.Context().Value(CtxKey).(*Context)
-
-	h := t.match(r.URL.Path, ctx)
-	if h == nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	h.ServeHTTP(w, r)
-	ctxPool.Put(ctx)
-}
-
-// match the route
-func (t *tree) match(path string, ctx *Context) http.Handler {
-	var matchEnd int
-	var matchedVal string
-
-	for i := 0; i < len(path); {
-		v := path[i]
-
-		switch {
-		case t.v == 0x0:
-			return nil
-
-		case v == '/' && t.eq.v == '*':
-			return t.eq.h
-		case v == '/' && t.gt.v == ':':
-			for matchEnd = i + 1; matchEnd < len(path) && path[matchEnd] != '/'; matchEnd++ {
-				if matchEnd == len(path)-1 {
-					matchedVal = path[i+1 : matchEnd]
-
-				} else {
-					matchedVal = path[i+1 : matchEnd+1]
-				}
-
-			}
-			ctx.Params.Add(t.gt.varName, matchedVal)
-			if matchEnd >= len(path)-1 {
-				return t.gt.h
-			}
-			i = matchEnd
-			t = t.gt.lt
-
-		case v > t.v:
-			t = t.gt
-
-		case v < t.v:
-			t = t.lt
-
-		case i == len(path)-1 && t.h != nil:
-			return t.h
-
-		default:
-			t = t.eq
-			i++
-		}
-	}
-
-	return nil
-}
-
-func routeVarGet(varStart int, path string) (val string, end int) {
-	end = varStart + 1
-	routeLen := len(path)
-	for end < routeLen && path[end] != '/' {
-		switch path[end] {
-		case '/':
-			return path[varStart:end], end
-		default:
-			end++
-		}
-	}
-
-	return path[varStart+1 : end], end
 }
 
 func (h *HTTPRouter) longestPrefix(key string, ctx *Context) http.Handler {

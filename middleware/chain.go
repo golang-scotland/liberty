@@ -15,6 +15,14 @@ type Chain struct {
 	handlers []Chainable
 }
 
+// ChainFunc is an adapter to allow chaining of externally defined middlewares
+type ChainFunc func(http.Handler) http.Handler
+
+// Chain calls f(h) and returns an http.Handler
+func (f ChainFunc) Chain(h http.Handler) http.Handler {
+	return f(h)
+}
+
 // NewChain initiates the chain
 func NewChain(handlers ...Chainable) *Chain {
 	ch := &Chain{}

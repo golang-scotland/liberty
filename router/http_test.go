@@ -121,6 +121,30 @@ func TestColonValues(t *testing.T) {
 
 }
 
+func TestHomePath(t *testing.T) {
+	testPath := "/"
+	testRoute := "/"
+
+	router := newRouter()
+	mux := http.NewServeMux()
+
+	ctx := ctxPool.Get().(*Context)
+	ctx.Reset()
+
+	if err := router.Handle(testRoute, mux); err != nil {
+		t.Error(err)
+	}
+	match := router.match(testPath, ctx)
+	if match == nil {
+		t.Errorf("bad search:")
+	}
+
+	if fmt.Sprintf("%p", mux) != fmt.Sprintf("%p", match) {
+		t.Errorf("address mismatch: - h: %#v,  match: %#v", mux, match)
+	}
+	ctxPool.Put(ctx)
+}
+
 func TestMiddlePlaced(t *testing.T) {
 	testPath := "/repos/graham/liberty/stargazers"
 	testRoute := "/repos/:owner/:repo/stargazers"
