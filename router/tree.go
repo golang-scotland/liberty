@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 type method int
@@ -16,16 +17,17 @@ const (
 	OPTIONS
 	HEAD
 	RANGE
+	DELETE
 )
 
 var methods = map[string]method{
-	"GET":     GET,
-	"POST":    POST,
-	"PUT":     PUT,
-	"PATCH":   PATCH,
-	"OPTIONS": OPTIONS,
-	"HEAD":    HEAD,
-	"RANGE":   RANGE,
+	"GET":    GET,
+	"POST":   POST,
+	"PUT":    PUT,
+	"PATCH":  PATCH,
+	"HEAD":   HEAD,
+	"RANGE":  RANGE,
+	"DELETE": DELETE,
 }
 
 type mHandlers map[method]http.Handler
@@ -68,6 +70,7 @@ func (t *tree) handle(method method, path string, handler http.Handler) error {
 			if varEnd, err = routeVarEnd(i, path); err != nil {
 				return err
 			}
+
 			t = t.gt
 			t.v = ':'
 			t.varName = string(path[i+2 : varEnd])
@@ -76,8 +79,9 @@ func (t *tree) handle(method method, path string, handler http.Handler) error {
 			t.gt = &tree{}
 
 			i = varEnd
+			t.addMethodHandler(method, handler)
+
 			if varEnd > lastChar {
-				t.handlers[method] = handler
 				return nil
 			}
 
@@ -90,7 +94,7 @@ func (t *tree) handle(method method, path string, handler http.Handler) error {
 			t = t.gt
 
 		case i == lastChar:
-			t.handlers[method] = handler
+			t.addMethodHandler(method, handler)
 			return nil
 
 		default:
@@ -100,6 +104,14 @@ func (t *tree) handle(method method, path string, handler http.Handler) error {
 	}
 
 	return fmt.Errorf("unable to insert handler for key '%s'", path)
+}
+
+func (t *tree) addMethodHandler(m method, h http.Handler) {
+	if t.handlers == nil {
+		t.handlers = make(mHandlers, 0)
+	}
+
+	t.handlers[m] = h
 }
 
 func numParams(path string) (n uint) {
@@ -132,9 +144,22 @@ func (t *tree) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := ctxPool.Get().(*Context)
 	//ctx := r.Context().Value(CtxKey).(*Context)
 
-	h := t.match(r.URL.Path, ctx)
+	h, err := t.match(methods[r.Method], r.URL.Path, ctx)
 	if h == nil {
-		http.NotFound(w, r)
+		if strings.HasSuffix(r.URL.Path, "*") {
+			if h, err = t.matchWildcard(methods[r.Method], r.URL.Path[:len(r.URL.Path)-1], ctx); h != nil {
+				h.ServeHTTP(w, r)
+				return
+			}
+		}
+
+		switch err {
+		case ErrMethodNotAllowed:
+			http.Error(w, err.Error(), http.StatusMethodNotAllowed)
+		case ErrNoRoute:
+			http.NotFound(w, r)
+		}
+
 		return
 	}
 
@@ -143,7 +168,7 @@ func (t *tree) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 var ErrMethodNotAllowed = errors.New("Method verb for this routing pattern is not registered.")
-var ErrNoRoute = errors.New("This route cannot be amtched.")
+var ErrNoRoute = errors.New("This route cannot be matched.")
 
 // match the route
 func (t *tree) match(method method, path string, ctx *Context) (http.Handler, error) {
@@ -178,7 +203,7 @@ func (t *tree) match(method method, path string, ctx *Context) (http.Handler, er
 			ctx.Params.Add(t.gt.varName, matchedVal)
 
 			if matchEnd >= len(path)-1 {
-				if matchedHandler, ok = t.eq.handlers[method]; ok {
+				if matchedHandler, ok = t.gt.handlers[method]; ok {
 					return matchedHandler, nil
 				}
 				return nil, ErrMethodNotAllowed
@@ -194,7 +219,7 @@ func (t *tree) match(method method, path string, ctx *Context) (http.Handler, er
 			t = t.lt
 
 		case i == len(path)-1:
-			if matchedHandler, ok = t.eq.handlers[method]; ok {
+			if matchedHandler, ok = t.handlers[method]; ok {
 				return matchedHandler, nil
 			}
 			return nil, ErrMethodNotAllowed
@@ -221,4 +246,36 @@ func routeVarGet(varStart int, path string) (val string, end int) {
 	}
 
 	return path[varStart+1 : end], end
+}
+
+func (t *tree) matchWildcard(m method, key string, ctx *Context) (http.Handler, error) {
+	prefixEnd := t.prefixLength(t, key, 0)
+
+	return t.match(m, key[0:prefixEnd], ctx)
+}
+
+func (t *tree) prefixLength(search *tree, key string, index int) int {
+	if index == len(key) {
+		return 0
+	}
+
+	length := 0
+	recLen := 0
+	v := key[index]
+
+	if v < t.v {
+		recLen = t.prefixLength(t.lt, key, index)
+	} else if v > t.v {
+		recLen = t.prefixLength(t.gt, key, index)
+	} else {
+		if t.v != 0x0 {
+			length = index + 1
+		}
+		recLen = t.prefixLength(t.eq, key, index+1)
+	}
+	if length > recLen {
+		return length
+	}
+
+	return recLen
 }

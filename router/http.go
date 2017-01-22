@@ -7,13 +7,11 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strings"
 
 	"golang.scot/liberty/middleware"
 )
 
-// HTTPRouter is a ternary search tree based HTTP request router. HTTPRouter
-// satifsies the standard libray http.Handler interface.
+// HTTPRouter is a ternary search tree/trie based HTTP request router.
 type HTTPRouter struct {
 	tree    *tree
 	chain   *middleware.Chain
@@ -21,7 +19,9 @@ type HTTPRouter struct {
 }
 
 func NewHTTPRouter() *HTTPRouter {
-	return &HTTPRouter{tree: &tree{}}
+	return &HTTPRouter{tree: &tree{
+		handlers: make(mHandlers, 0),
+	}}
 }
 
 func (h *HTTPRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -65,55 +65,14 @@ func (h *HTTPRouter) Post(path string, handler http.Handler) error {
 	return h.handle(POST, path, handler)
 }
 
+func (h *HTTPRouter) Delete(path string, handler http.Handler) error {
+	return h.handle(DELETE, path, handler)
+}
+
+func (h *HTTPRouter) Patch(path string, handler http.Handler) error {
+	return h.handle(PATCH, path, handler)
+}
+
 func (h *HTTPRouter) Put(path string, handler http.Handler) error {
 	return h.handle(PUT, path, handler)
-}
-
-func (h *HTTPRouter) match(path string, ctx *Context) http.Handler {
-	var handler http.Handler
-	if handler = h.tree.match(path, ctx); handler == nil {
-		if strings.HasSuffix(path, "*") {
-			if handler = h.longestPrefix(path[:len(path)-1], ctx); handler != nil {
-				return handler
-			}
-		}
-		return nil
-	}
-
-	return handler
-}
-
-func (h *HTTPRouter) longestPrefix(key string, ctx *Context) http.Handler {
-	if len(key) < 1 {
-		return nil
-	}
-
-	length := h.prefix(h.tree, key, 0)
-
-	return h.tree.match(key[0:length], ctx)
-}
-
-func (h *HTTPRouter) prefix(n *tree, key string, index int) int {
-	if index == len(key) || n == nil {
-		return 0
-	}
-
-	length := 0
-	recLen := 0
-	v := key[index]
-
-	if v < n.v {
-		recLen = h.prefix(n.lt, key, index)
-	} else if v > n.v {
-		recLen = h.prefix(n.gt, key, index)
-	} else {
-		if n.v != 0x0 {
-			length = index + 1
-		}
-		recLen = h.prefix(n.eq, key, index+1)
-	}
-	if length > recLen {
-		return length
-	}
-	return recLen
 }
