@@ -1,36 +1,11 @@
 package router
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
-	"strings"
+
+	"github.com/pkg/errors"
 )
-
-type method int
-
-const (
-	GET = 1 << iota
-	POST
-	PUT
-	PATCH
-	OPTIONS
-	HEAD
-	RANGE
-	DELETE
-)
-
-var methods = map[string]method{
-	"GET":    GET,
-	"POST":   POST,
-	"PUT":    PUT,
-	"PATCH":  PATCH,
-	"HEAD":   HEAD,
-	"RANGE":  RANGE,
-	"DELETE": DELETE,
-}
-
-type mHandlers map[method]http.Handler
 
 // a ternary search trie (tree for the avoidance of pronunciation doubt)
 type tree struct {
@@ -43,21 +18,22 @@ type tree struct {
 }
 
 func (t *tree) String() string {
-	return fmt.Sprintf("[value: %s, t.varName: %s]", string(t.v), t.varName)
+	return fmt.Sprintf("[value: %s, t.varName: %s, handlers: %#t]", string(t.v), t.varName, t.handlers)
 }
 
-func (t *tree) handle(method method, path string, handler http.Handler) error {
+// register a given handler for a pattern with a specific HTTP verb
+func (t *tree) handle(method method, pattern string, handler http.Handler) error {
 	if handler == nil {
-		panic("nil group")
+		panic("Handler may not be nil")
 	}
-	l := len(path)
+	l := len(pattern)
 	lastChar := l - 1
 
 	var err error
 	var varEnd int
 
 	for i := 0; i < l; {
-		v := path[i]
+		v := pattern[i]
 		if t.v == 0x0 {
 			t.v = v
 			t.lt = &tree{}
@@ -66,22 +42,23 @@ func (t *tree) handle(method method, path string, handler http.Handler) error {
 		}
 
 		switch {
-		case v == '/' && i != lastChar && path[i+1] == ':':
-			if varEnd, err = routeVarEnd(i, path); err != nil {
+		case v == '/' && i != lastChar && pattern[i+1] == ':':
+			if varEnd, err = routeVarEnd(i, pattern); err != nil {
 				return err
 			}
-
 			t = t.gt
 			t.v = ':'
-			t.varName = string(path[i+2 : varEnd])
+			t.varName = string(pattern[i+2 : varEnd])
 			t.lt = &tree{}
 			t.eq = &tree{}
 			t.gt = &tree{}
 
 			i = varEnd
-			t.addMethodHandler(method, handler)
-
 			if varEnd > lastChar {
+				if t.handlers == nil {
+					t.handlers = make(mHandlers, 0)
+				}
+				t.handlers[method] = handler
 				return nil
 			}
 
@@ -94,7 +71,10 @@ func (t *tree) handle(method method, path string, handler http.Handler) error {
 			t = t.gt
 
 		case i == lastChar:
-			t.addMethodHandler(method, handler)
+			if t.handlers == nil {
+				t.handlers = make(mHandlers, 0)
+			}
+			t.handlers[method] = handler
 			return nil
 
 		default:
@@ -103,15 +83,7 @@ func (t *tree) handle(method method, path string, handler http.Handler) error {
 		}
 	}
 
-	return fmt.Errorf("unable to insert handler for key '%s'", path)
-}
-
-func (t *tree) addMethodHandler(m method, h http.Handler) {
-	if t.handlers == nil {
-		t.handlers = make(mHandlers, 0)
-	}
-
-	t.handlers[m] = h
+	return fmt.Errorf("unable to insert handler for key '%s'", pattern)
 }
 
 func numParams(path string) (n uint) {
@@ -143,27 +115,40 @@ func routeVarEnd(start int, path string) (end int, err error) {
 func (t *tree) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := ctxPool.Get().(*Context)
 	//ctx := r.Context().Value(CtxKey).(*Context)
+	var handler http.Handler
+	var err error
+	var method method
+	var notAllowed = func() {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		w.Write(nil)
+	}
 
-	h, err := t.match(methods[r.Method], r.URL.Path, ctx)
-	if h == nil {
-		if strings.HasSuffix(r.URL.Path, "*") {
-			if h, err = t.matchWildcard(methods[r.Method], r.URL.Path[:len(r.URL.Path)-1], ctx); h != nil {
-				h.ServeHTTP(w, r)
-				return
-			}
-		}
+	method, ok := methods[r.Method]
 
-		switch err {
-		case ErrMethodNotAllowed:
-			http.Error(w, err.Error(), http.StatusMethodNotAllowed)
-		case ErrNoRoute:
-			http.NotFound(w, r)
-		}
-
+	if !ok {
+		notAllowed()
 		return
 	}
 
-	h.ServeHTTP(w, r)
+	handler, err = t.match(method, r.URL.Path, ctx)
+
+	switch err {
+	case ErrMethodNotAllowed:
+		notAllowed()
+		ctxPool.Put(ctx)
+		return
+	case ErrNoRoute:
+		http.NotFound(w, r)
+		ctxPool.Put(ctx)
+		return
+	default:
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+	}
+
+	handler.ServeHTTP(w, r)
 	ctxPool.Put(ctx)
 }
 
@@ -188,7 +173,10 @@ func (t *tree) match(method method, path string, ctx *Context) (http.Handler, er
 			if matchedHandler, ok = t.eq.handlers[method]; ok {
 				return matchedHandler, nil
 			}
-			return nil, ErrMethodNotAllowed
+			return nil, errors.Wrap(
+				ErrMethodNotAllowed,
+				fmt.Sprintf("handler not found for wildcard with method '%s'", t.gt.varName, method),
+			)
 
 		case v == '/' && t.gt.v == ':':
 			for matchEnd = i + 1; matchEnd < len(path) && path[matchEnd] != '/'; matchEnd++ {
@@ -206,7 +194,10 @@ func (t *tree) match(method method, path string, ctx *Context) (http.Handler, er
 				if matchedHandler, ok = t.gt.handlers[method]; ok {
 					return matchedHandler, nil
 				}
-				return nil, ErrMethodNotAllowed
+				return nil, errors.Wrap(
+					ErrMethodNotAllowed,
+					fmt.Sprintf("handler not found for '%s' with method '%s'", t.gt.varName, method),
+				)
 			}
 
 			i = matchEnd
@@ -222,7 +213,10 @@ func (t *tree) match(method method, path string, ctx *Context) (http.Handler, er
 			if matchedHandler, ok = t.handlers[method]; ok {
 				return matchedHandler, nil
 			}
-			return nil, ErrMethodNotAllowed
+			return nil, errors.Wrap(
+				ErrMethodNotAllowed,
+				fmt.Sprintf("handler not at end of routing pattern with method '%s'", method),
+			)
 
 		default:
 			t = t.eq
@@ -248,14 +242,18 @@ func routeVarGet(varStart int, path string) (val string, end int) {
 	return path[varStart+1 : end], end
 }
 
-func (t *tree) matchWildcard(m method, key string, ctx *Context) (http.Handler, error) {
-	prefixEnd := t.prefixLength(t, key, 0)
+func (t *tree) longestPrefix(mthd method, key string, ctx *Context) (http.Handler, error) {
+	if len(key) < 1 {
+		return nil, ErrNoRoute
+	}
 
-	return t.match(m, key[0:prefixEnd], ctx)
+	length := prefix(t, key, 0)
+
+	return t.match(mthd, key[0:length], ctx)
 }
 
-func (t *tree) prefixLength(search *tree, key string, index int) int {
-	if index == len(key) {
+func prefix(t *tree, key string, index int) int {
+	if index == len(key) || t == nil {
 		return 0
 	}
 
@@ -264,14 +262,14 @@ func (t *tree) prefixLength(search *tree, key string, index int) int {
 	v := key[index]
 
 	if v < t.v {
-		recLen = t.prefixLength(t.lt, key, index)
+		recLen = prefix(t.lt, key, index)
 	} else if v > t.v {
-		recLen = t.prefixLength(t.gt, key, index)
+		recLen = prefix(t.gt, key, index)
 	} else {
 		if t.v != 0x0 {
 			length = index + 1
 		}
-		recLen = t.prefixLength(t.eq, key, index+1)
+		recLen = prefix(t.eq, key, index+1)
 	}
 	if length > recLen {
 		return length

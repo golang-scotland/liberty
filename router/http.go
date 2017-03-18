@@ -1,6 +1,4 @@
-// Package router implements a ternary search tree based HTTP router. The main
-// focus of this package is to support using a single HTTP request muxer that
-// multiple HTTP servers.
+// Package router implements a ternary search tree based HTTP router.
 package router
 
 import (
@@ -11,20 +9,59 @@ import (
 	"golang.scot/liberty/middleware"
 )
 
-// HTTPRouter is a ternary search tree/trie based HTTP request router.
-type HTTPRouter struct {
+type method int
+
+const (
+	GET = 1 << iota
+	POST
+	PUT
+	PATCH
+	OPTIONS
+	HEAD
+	RANGE
+	DELETE
+)
+
+var methods = map[string]method{
+	"GET":     GET,
+	"POST":    POST,
+	"PUT":     PUT,
+	"PATCH":   PATCH,
+	"OPTIONS": OPTIONS,
+	"HEAD":    HEAD,
+	"RANGE":   RANGE,
+	"DELETE":  DELETE,
+}
+
+func (m method) String() string {
+	var methods = map[method]string{
+		GET:     "GET",
+		POST:    "POST",
+		PUT:     "PUT",
+		PATCH:   "PATCH",
+		OPTIONS: "OPTIONS",
+		HEAD:    "HEAD",
+		RANGE:   "RANGE",
+	}
+
+	return methods[m]
+}
+
+type mHandlers map[method]http.Handler
+
+// Router is a ternary search tree based HTTP request router. Router
+// satifsies the standard libray http.Handler interface.
+type Router struct {
 	tree    *tree
 	chain   *middleware.Chain
 	handler http.Handler
 }
 
-func NewHTTPRouter() *HTTPRouter {
-	return &HTTPRouter{tree: &tree{
-		handlers: make(mHandlers, 0),
-	}}
+func NewHTTPRouter() *Router {
+	return &Router{tree: &tree{}}
 }
 
-func (h *HTTPRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := ctxPool.Get().(*Context)
 	ctx.Reset()
 	r = r.WithContext(context.WithValue(r.Context(), CtxKey, ctx))
@@ -32,12 +69,12 @@ func (h *HTTPRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctxPool.Put(ctx)
 }
 
-func (h *HTTPRouter) Use(handlers []middleware.Chainable) {
+func (h *Router) Use(handlers []middleware.Chainable) {
 	h.chain = middleware.NewChain(handlers...)
 	h.handler = h.chain.Link(h.tree)
 }
 
-func (h *HTTPRouter) handle(method method, path string, handler http.Handler) error {
+func (h *Router) handle(method method, path string, handler http.Handler) error {
 	if h.tree == nil {
 		h.tree = &tree{}
 	}
@@ -57,22 +94,18 @@ func (h *HTTPRouter) handle(method method, path string, handler http.Handler) er
 	return nil
 }
 
-func (h *HTTPRouter) Get(path string, handler http.Handler) error {
+func (h *Router) Get(path string, handler http.Handler) error {
 	return h.handle(GET, path, handler)
 }
 
-func (h *HTTPRouter) Post(path string, handler http.Handler) error {
+func (h *Router) Post(path string, handler http.Handler) error {
 	return h.handle(POST, path, handler)
 }
 
-func (h *HTTPRouter) Delete(path string, handler http.Handler) error {
-	return h.handle(DELETE, path, handler)
-}
-
-func (h *HTTPRouter) Patch(path string, handler http.Handler) error {
-	return h.handle(PATCH, path, handler)
-}
-
-func (h *HTTPRouter) Put(path string, handler http.Handler) error {
+func (h *Router) Put(path string, handler http.Handler) error {
 	return h.handle(PUT, path, handler)
+}
+
+func (h *Router) match(method method, path string, ctx *Context) (http.Handler, error) {
+	return h.tree.match(method, path, ctx)
 }

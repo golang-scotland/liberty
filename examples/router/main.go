@@ -17,7 +17,7 @@ func httpHandlerFunc(w http.ResponseWriter, r *http.Request) {
 func main() {
 	r := router.NewHTTPRouter()
 	r.Use(nil)
-	r.Handle("/", http.HandlerFunc(httpHandlerFunc))
+	r.Get("/", http.HandlerFunc(httpHandlerFunc))
 
 	go func() {
 		fmt.Println(http.ListenAndServe(":7777", r))

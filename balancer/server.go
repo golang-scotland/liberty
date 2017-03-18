@@ -15,8 +15,7 @@ import (
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 
-	"usemarkup.com/env"
-
+	"golang.scot/liberty/env"
 	"golang.scot/liberty/router"
 )
 
@@ -65,7 +64,7 @@ type ServerGroup struct {
 
 // NewServerGroup creates a server group from a router and a slice of standard
 // library http servers
-func NewServerGroup(router *router.HTTPRouter, servers []*http.Server) *ServerGroup {
+func NewServerGroup(router *router.Router, servers []*http.Server) *ServerGroup {
 	sg := &ServerGroup{
 		w:       &sync.Mutex{},
 		servers: []*server{},
