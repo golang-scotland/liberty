@@ -36,7 +36,7 @@ func NewBalancer(config *Config) *Balancer {
 	b := &Balancer{
 		config: config,
 		groups: map[string]*ServerGroup{},
-		router: router.NewHTTPRouter(),
+		router: router.NewRouter(),
 	}
 
 	for _, proxy := range b.config.Proxies {

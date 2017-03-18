@@ -113,8 +113,7 @@ func routeVarEnd(start int, path string) (end int, err error) {
 }
 
 func (t *tree) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx := ctxPool.Get().(*Context)
-	//ctx := r.Context().Value(CtxKey).(*Context)
+	ctx := r.Context().Value(CtxKey).(*Context)
 	var handler http.Handler
 	var err error
 	var method method
@@ -131,6 +130,9 @@ func (t *tree) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	handler, err = t.match(method, r.URL.Path, ctx)
+	if err != nil {
+		panic(err)
+	}
 
 	switch err {
 	case ErrMethodNotAllowed:

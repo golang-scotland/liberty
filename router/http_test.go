@@ -24,7 +24,7 @@ func httpWriterRequest(urlPath string) (http.ResponseWriter, *http.Request) {
 }
 
 func newRouter() *Router {
-	router := NewHTTPRouter()
+	router := NewRouter()
 	/*router.Use(
 		[]middleware.Chainable{&middleware.HelloWorld{}},
 	)

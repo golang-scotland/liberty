@@ -57,7 +57,7 @@ type Router struct {
 	handler http.Handler
 }
 
-func NewHTTPRouter() *Router {
+func NewRouter() *Router {
 	return &Router{tree: &tree{}}
 }
 
@@ -104,6 +104,14 @@ func (h *Router) Post(path string, handler http.Handler) error {
 
 func (h *Router) Put(path string, handler http.Handler) error {
 	return h.handle(PUT, path, handler)
+}
+
+func (h *Router) Patch(path string, handler http.Handler) error {
+	return h.handle(PATCH, path, handler)
+}
+
+func (h *Router) Delete(path string, handler http.Handler) error {
+	return h.handle(DELETE, path, handler)
 }
 
 func (h *Router) match(method method, path string, ctx *Context) (http.Handler, error) {
