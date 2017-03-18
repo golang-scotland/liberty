@@ -24,7 +24,7 @@ func httpWriterRequest(urlPath string) (http.ResponseWriter, *http.Request) {
 }
 
 func newRouter() *Router {
-	router := NewHTTPRouter()
+	router := NewRouter()
 	/*router.Use(
 		[]middleware.Chainable{&middleware.HelloWorld{}},
 	)
@@ -63,6 +63,90 @@ var testRoutes = []struct {
 	}},
 }
 
+func TestSingleMatch(t *testing.T) {
+	pattern := "/test/example/:var1/path/:var2"
+	pattern2 := "/:ab/:bc/:cd/:de/:ef"
+	pattern3 := "/test2/example/:foo/path/:bar"
+	path := "/test/example/foobar/path/barbaz"
+
+	router := newRouter()
+	mux := http.NewServeMux()
+
+	ctx := ctxPool.Get().(*Context)
+	ctx.Reset()
+
+	if err := router.Get(pattern, mux); err != nil {
+		t.Error(err)
+	}
+	if err := router.Get(pattern2, mux); err != nil {
+		t.Error(err)
+	}
+	if err := router.Get(pattern3, mux); err != nil {
+		t.Error(err)
+	}
+
+	match := router.match(GET, path, ctx)
+	if match == nil {
+		t.Errorf("bad search: %s")
+		t.Errorf("pattern registered: %s", pattern)
+		t.Errorf("path tested: %s", path)
+	}
+
+	if fmt.Sprintf("%p", mux) != fmt.Sprintf("%p", match) {
+		t.Errorf("address mismatch: - h: %#v,  match: %#v", mux, match)
+	}
+	if ctx.Params.Get("var2") != "barbaz" {
+		t.Errorf("variable mismatch - expected '%s', got '%s'", "foobar", ctx.Params.Get("var2"))
+	}
+	printTraversal(router.tree.root)
+}
+
+func TestGithub(t *testing.T) {
+	r := newRouter()
+	for _, route := range githubAPI {
+		h := http.NewServeMux()
+
+		ctx := ctxPool.Get().(*Context)
+		ctx.Reset()
+
+		var testErr = func(err error) {
+			if err != nil {
+				panic(err)
+			}
+		}
+
+		switch route.method {
+		case "GET":
+			testErr(r.Get(route.path, h))
+		case "POST":
+			testErr(r.Post(route.path, h))
+		case "PUT":
+			testErr(r.Put(route.path, h))
+		case "PATCH":
+			testErr(r.Patch(route.path, h))
+		case "DELETE":
+			testErr(r.Delete(route.path, h))
+		default:
+			panic("Unknown HTTP method: " + route.method)
+		}
+
+		ctxPool.Put(ctx)
+	}
+
+	for _, route := range githubAPI {
+		ctx := ctxPool.Get().(*Context)
+		ctx.Reset()
+
+		method, _ := methods[route.method]
+		match := r.match(method, route.path, ctx)
+		if match == nil {
+			t.Errorf("path tested: %s", route.path)
+		}
+
+		ctxPool.Put(ctx)
+	}
+}
+
 func TestRouteMatch(t *testing.T) {
 	for _, testroute := range testRoutes {
 		router := newRouter()
@@ -74,11 +158,17 @@ func TestRouteMatch(t *testing.T) {
 		if err := router.Get(testroute.pattern, mux); err != nil {
 			t.Error(err)
 		}
-		match, err := router.match(GET, testroute.path, ctx)
-		if match == nil || err != nil {
-			t.Errorf("bad search: %s", err)
+		match := router.match(GET, testroute.path, ctx)
+		if match == nil {
+			t.Errorf("bad search: %s")
 			t.Errorf("pattern registered: %s", testroute.pattern)
 			t.Errorf("path tested: %s", testroute.path)
+		}
+
+		for key, expected := range testroute.testMatches {
+			if ctx.Params.Get(key) != expected {
+				t.Errorf("bad value - expected %s, got %s", expected, ctx.Params.Get(key))
+			}
 		}
 
 		if fmt.Sprintf("%p", mux) != fmt.Sprintf("%p", match) {
@@ -87,6 +177,19 @@ func TestRouteMatch(t *testing.T) {
 
 		ctxPool.Put(ctx)
 	}
+}
+
+func TestBuiltTreeMatch(t *testing.T) {
+	router := newRouter()
+	for _, testroute := range testRoutes {
+		mux := http.NewServeMux()
+
+		if err := router.Get(testroute.pattern, mux); err != nil {
+			t.Error(err)
+		}
+	}
+
+	printTraversal(router.tree.root)
 }
 
 func valuesForBenchmark(numValues int, cb func(string)) {

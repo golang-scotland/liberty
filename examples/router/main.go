@@ -15,7 +15,7 @@ func httpHandlerFunc(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	r := router.NewHTTPRouter()
+	r := router.NewRouter()
 	r.Use(nil)
 	r.Get("/", http.HandlerFunc(httpHandlerFunc))
 
