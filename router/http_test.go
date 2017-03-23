@@ -63,6 +63,36 @@ var testRoutes = []struct {
 	}},
 }
 
+func TestSingleMatch(t *testing.T) {
+	pattern := "/test/example/:var1/path/:var2"
+	pattern2 := "/test2/example/:foo/path/:bar"
+	//path := "/test/example/foobar/path/barbaz"
+	path := "/test/example/:var1/path/:var2"
+
+	router := newRouter()
+	mux := http.NewServeMux()
+
+	ctx := ctxPool.Get().(*Context)
+	ctx.Reset()
+	if err := router.Get(pattern, mux); err != nil {
+		t.Error(err)
+	}
+	if err := router.Get(pattern2, mux); err != nil {
+		t.Error(err)
+	}
+	match := router.match(GET, path, ctx)
+	if match == nil {
+		t.Errorf("bad search: %s")
+		t.Errorf("pattern registered: %s", pattern)
+		t.Errorf("path tested: %s", path)
+	}
+
+	if fmt.Sprintf("%p", mux) != fmt.Sprintf("%p", match) {
+		t.Errorf("address mismatch: - h: %#v,  match: %#v", mux, match)
+	}
+	printTraversal(router.tree.root)
+}
+
 func TestRouteMatch(t *testing.T) {
 	for _, testroute := range testRoutes {
 		router := newRouter()
@@ -74,11 +104,17 @@ func TestRouteMatch(t *testing.T) {
 		if err := router.Get(testroute.pattern, mux); err != nil {
 			t.Error(err)
 		}
-		match, err := router.match(GET, testroute.path, ctx)
-		if match == nil || err != nil {
-			t.Errorf("bad search: %s", err)
+		match := router.match(GET, testroute.path, ctx)
+		if match == nil {
+			t.Errorf("bad search: %s")
 			t.Errorf("pattern registered: %s", testroute.pattern)
 			t.Errorf("path tested: %s", testroute.path)
+		}
+
+		for key, expected := range testroute.testMatches {
+			if ctx.Params.Get(key) != expected {
+				t.Errorf("bad value - expected %s, got %s", expected, ctx.Params.Get(key))
+			}
 		}
 
 		if fmt.Sprintf("%p", mux) != fmt.Sprintf("%p", match) {
@@ -87,6 +123,19 @@ func TestRouteMatch(t *testing.T) {
 
 		ctxPool.Put(ctx)
 	}
+}
+
+func TestBuiltTreeMatch(t *testing.T) {
+	router := newRouter()
+	for _, testroute := range testRoutes {
+		mux := http.NewServeMux()
+
+		if err := router.Get(testroute.pattern, mux); err != nil {
+			t.Error(err)
+		}
+	}
+
+	printTraversal(router.tree.root)
 }
 
 func valuesForBenchmark(numValues int, cb func(string)) {
