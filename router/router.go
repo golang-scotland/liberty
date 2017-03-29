@@ -4,6 +4,7 @@ package router
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"golang.scot/liberty/middleware"
 )
@@ -89,12 +90,13 @@ func (h *Router) handle(method method, path string, handler http.Handler) error 
 		h.handler = h.tree
 	}
 
-	h.tree.root = h.tree.handleRecursive(method, h.tree.root, path, 0, handler)
+	pat := NewPattern(method, path, handler)
+	h.tree.root = h.tree.handleRecursive(h.tree.root, pat, 0)
 	/*if err := h.tree.handle(method, path, handler); err != nil {
 		fmt.Printf("could not register HotPath '%s' - %s", path, err)
 		return err
 	}*/
-	printTraversal(h.tree.root)
+	//printTraversal(h.tree.root)
 	return nil
 }
 
@@ -120,4 +122,50 @@ func (h *Router) Delete(path string, handler http.Handler) error {
 
 func (h *Router) match(method method, path string, ctx *Context) http.Handler {
 	return h.tree.Match(method, path, ctx)
+}
+
+type patternVariable struct {
+	name string
+	typ  string
+}
+
+type pattern struct {
+	str      string
+	method   method
+	varCount int
+	locs     map[int]*patternVariable
+	handler  http.Handler
+}
+
+func NewPattern(method method, pat string, handler http.Handler) *pattern {
+	p := &pattern{
+		str:      pat,
+		method:   method,
+		varCount: 0,
+		locs:     make(map[int]*patternVariable, 0),
+		handler:  handler,
+	}
+	p.setVarCount()
+
+	return p
+}
+
+func (p *pattern) setVarCount() {
+	for i := 0; i < len(p.str); i++ {
+		if i > 0 && i < len(p.str)-1 && p.str[i] == ':' {
+			splits := strings.Split(p.str[i+1:], "/")
+			p.varCount++
+			p.locs[i] = &patternVariable{name: splits[0], typ: "default"}
+		}
+	}
+}
+
+func (p *pattern) varNameAt(i int) (string, bool) {
+	for j, variable := range p.locs {
+		if i == j {
+			return variable.name, true
+		}
+	}
+
+	return "", false
 }

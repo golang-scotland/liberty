@@ -3,6 +3,7 @@ package router
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/pkg/errors"
 )
@@ -11,11 +12,11 @@ type Tree struct {
 	root *node
 }
 
-func (t *Tree) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	t.root.ServeHTTP(w, r)
+func (t *Tree) TServeHTTP(w http.ResponseWriter, r *http.Request) {
+	//t.root.ServeHTTP(w, r)
 }
 
-// a ternary search trie (tree for the avoidance of pronunciation doubt)
+// a ternary search tree/trie (tree for the avoidance of pronunciation doubt)
 type node struct {
 	lt       *node
 	eq       *node
@@ -23,32 +24,49 @@ type node struct {
 	v        byte
 	handlers mHandlers
 	varName  string
+	varEnd   *node
 }
 
 func (n *node) String() string {
-	return fmt.Sprintf("[value: %s, t.varName: %s, handlers: %#t]", string(n.v), n.varName, n.handlers)
+	return fmt.Sprintf(
+		"[value: %s, t.varName: %s, handlers: %#t]",
+		string(n.v),
+		n.varName,
+		n.handlers,
+	)
 }
 
-func (t *Tree) handleRecursive(method method, nd *node, pattern string, index int, handler http.Handler) *node {
-	v := pattern[index]
+var nodeVarStart *node
+
+func (t *Tree) handleRecursive(nd *node, pattern *pattern, index int) *node {
+	v := pattern.str[index]
+
 	if nd == nil {
 		nd = &node{v: v}
 	}
 
+	varName, ok := pattern.varNameAt(index)
+	if ok {
+		nodeVarStart = nd
+		nd.varName = varName
+	}
+
+	if nd.v == '/' {
+		nd.varEnd = nodeVarStart
+	}
+
 	if v < nd.v {
-		fmt.Println("V < N", string(v), string(nd.v), index)
-		nd.lt = t.handleRecursive(method, nd.lt, pattern, index, handler)
+		nd.lt = t.handleRecursive(nd.lt, pattern, index)
 	} else if v > nd.v {
-		fmt.Println("V > N", string(v), string(nd.v), index)
-		nd.gt = t.handleRecursive(method, nd.gt, pattern, index, handler)
-	} else if index < (len(pattern) - 1) {
-		fmt.Println("V = N", string(v), string(nd.v), index)
-		nd.eq = t.handleRecursive(method, nd.eq, pattern, index+1, handler)
+		nd.gt = t.handleRecursive(nd.gt, pattern, index)
+	} else if index < (len(pattern.str) - 1) {
+		nd.eq = t.handleRecursive(nd.eq, pattern, index+1)
 	} else {
+		//fmt.Println("HANDLED", string(v))
 		if nd.handlers == nil {
 			nd.handlers = make(mHandlers, 0)
 		}
-		nd.handlers[method] = handler
+		nd.handlers[pattern.method] = pattern.handler
 	}
 
 	return nd
@@ -58,24 +76,90 @@ func (t *Tree) Match(method method, path string, ctx *Context) http.Handler {
 	l := len(path)
 	n := t.root
 	i := 0
+	var nextString int
+	var match int
+	var matchedVal string
+	var c byte
+	// ctx.Params.Add(t.gt.varName, matchedVal)
 	for i < l {
-		fmt.Println("i:", i)
-		c := path[i]
-		if n == nil || n.v == 0x0 {
-			fmt.Println("EMPTY")
+		c = path[i]
+		switch {
+		case c == '/' && n.eq != nil && (n.eq.v == ':' || n.eq.v == '*'):
+			//fmt.Println("VAR START")
+			for match = i + 1; match < len(path) && path[match] != '/'; match++ {
+				if match == len(path)-1 {
+					matchedVal = path[i+1 : match+1]
+
+				} else {
+					matchedVal = path[i+1 : match+1]
+				}
+
+			}
+			//splits := strings.Split(path[i+1:], "/")
+			//val := splits[0]
+			//fmt.Println("varName:", n.eq.varName, "value:", val)
+			ctx.Params.Add(n.eq.varName, matchedVal)
+
+			nextString = strings.Index(path[i+1:], "/")
+			if nextString == -1 || n.eq.v == '*' {
+				//fmt.Println("END", path[i:])
+				return nodeAfterVarName(n.eq, true).handlers[method]
+			}
+			i++
+			i = i + nextString
+			//fmt.Println("MID", path[i:])
+			n = nodeAfterVarName(n.eq, false)
+			//n = n.varEnd
+
+			continue
+		case n == nil || n.v == 0x0:
+			//fmt.Println("MATCH NONE")
 			return nil
-		} else if c < n.v {
-			fmt.Println("C < N", string(c), n)
+		case c < n.v:
+			//fmt.Println("LT", string(c), n.lt, n.eq, n.gt)
 			n = n.lt
-		} else if c > n.v {
-			fmt.Println("C > N", string(c), n)
+		case c > n.v:
+			//fmt.Println("GT", string(c), n.lt, n.eq, n.gt)
 			n = n.gt
-		} else if i == l-1 {
+		case i == l-1:
 			if handler, ok := n.handlers[method]; ok {
+				//fmt.Println("MATCH", handler)
 				return handler
 			}
+		default:
+			//fmt.Println("EQ", string(c), n.lt, n.eq, n.gt)
+			n = n.eq
+			i++
+		}
+	}
+
+	//fmt.Println("DERP")
+	return nil
+}
+
+func nodeAfterVarName(n *node, lastNode bool) *node {
+
+	var path string
+	var c byte
+	var l, i int
+
+	path = string(n.v) + n.varName
+	if !lastNode && n.v != '*' {
+		path = path + "/"
+	}
+	l = len(path)
+	i = 0
+
+	for i < l {
+		c = path[i]
+
+		if c < n.v {
+			n = n.lt
+		} else if c > n.v {
+			n = n.gt
+		} else if i == l-1 {
+			return n
 		} else {
-			fmt.Println("C == N", string(c), n)
 			n = n.eq
 			i++
 		}
@@ -204,10 +288,10 @@ func routeVarEnd(start int, path string) (end int, err error) {
 	return end, nil
 }
 
-func (t *node) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (t *Tree) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context().Value(CtxKey).(*Context)
 	var handler http.Handler
-	var err error
+	//var err error
 	var method method
 	var notAllowed = func() {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -221,12 +305,13 @@ func (t *node) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	handler, err = t.match(method, r.URL.Path, ctx)
-	if err != nil {
-		fmt.Println(err)
+	handler = t.Match(method, r.URL.Path, ctx)
+	if handler == nil {
+		http.NotFound(w, r)
+		return
 	}
 
-	switch err {
+	/*switch err {
 	case ErrMethodNotAllowed:
 		notAllowed()
 		ctxPool.Put(ctx)
@@ -240,7 +325,7 @@ func (t *node) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-	}
+	}*/
 
 	handler.ServeHTTP(w, r)
 	ctxPool.Put(ctx)

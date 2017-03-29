@@ -64,10 +64,14 @@ var testRoutes = []struct {
 }
 
 func TestSingleMatch(t *testing.T) {
-	pattern := "/test/example/:var1/path/:var2"
-	pattern2 := "/test2/example/:foo/path/:bar"
+	pattern := "/repositories"
+	//pattern := "/test/example/:var1/path/:var2"
+	//pattern := "/:ab/:bc/:cd/:de/:ef"
+	//path := "/testa/test/testc/test/teste"
+	//pattern2 := "/test2/example/:foo/path/:bar"
+	path := "/repositories"
 	//path := "/test/example/foobar/path/barbaz"
-	path := "/test/example/:var1/path/:var2"
+	//path := "/test/example/:var1/path/:var2"
 
 	router := newRouter()
 	mux := http.NewServeMux()
@@ -77,9 +81,11 @@ func TestSingleMatch(t *testing.T) {
 	if err := router.Get(pattern, mux); err != nil {
 		t.Error(err)
 	}
-	if err := router.Get(pattern2, mux); err != nil {
+
+	/*if err := router.Get(pattern2, mux); err != nil {
 		t.Error(err)
-	}
+	}*/
+
 	match := router.match(GET, path, ctx)
 	if match == nil {
 		t.Errorf("bad search: %s")
@@ -90,7 +96,63 @@ func TestSingleMatch(t *testing.T) {
 	if fmt.Sprintf("%p", mux) != fmt.Sprintf("%p", match) {
 		t.Errorf("address mismatch: - h: %#v,  match: %#v", mux, match)
 	}
+	if ctx.Params.Get("var2") != "barbaz" {
+		t.Errorf("variable mismatch - expected '%s', got '%s'", "foobar", ctx.Params.Get("var2"))
+	}
 	printTraversal(router.tree.root)
+}
+
+func TestGithub(t *testing.T) {
+	r := newRouter()
+	for _, route := range githubAPI {
+		h := http.NewServeMux()
+
+		ctx := ctxPool.Get().(*Context)
+		ctx.Reset()
+
+		var testErr = func(err error) {
+			if err != nil {
+				panic(err)
+			}
+		}
+
+		switch route.method {
+		case "GET":
+			testErr(r.Get(route.path, h))
+		case "POST":
+			testErr(r.Post(route.path, h))
+		case "PUT":
+			testErr(r.Put(route.path, h))
+		case "PATCH":
+			testErr(r.Patch(route.path, h))
+		case "DELETE":
+			testErr(r.Delete(route.path, h))
+		default:
+			panic("Unknown HTTP method: " + route.method)
+		}
+
+		ctxPool.Put(ctx)
+	}
+	ctx := ctxPool.Get().(*Context)
+	ctx.Reset()
+	match := r.match(GET, "/repositories", ctx)
+	if match == nil {
+		t.Errorf("path tested: %s", "/repositories")
+	}
+	ctxPool.Put(ctx)
+
+	/*for _, route := range githubAPI {
+		ctx := ctxPool.Get().(*Context)
+		ctx.Reset()
+
+		method, _ := methods[route.method]
+		match := r.match(method, route.path, ctx)
+		if match == nil {
+			t.Errorf("path tested: %s", route.path)
+		}
+
+		ctxPool.Put(ctx)
+	}*/
 }
 
 func TestRouteMatch(t *testing.T) {
