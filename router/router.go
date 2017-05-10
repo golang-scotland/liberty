@@ -53,13 +53,17 @@ type mHandlers map[method]http.Handler
 // Router is a ternary search tree based HTTP request router. Router
 // satifsies the standard libray http.Handler interface.
 type Router struct {
-	tree    *Tree
-	chain   *middleware.Chain
-	handler http.Handler
+	tree     *Tree
+	chain    *middleware.Chain
+	handler  http.Handler
+	NotFound http.Handler
 }
 
 func NewRouter() *Router {
-	return &Router{tree: &Tree{}}
+	r := &Router{tree: &Tree{}}
+	r.tree.router = r
+
+	return r
 }
 
 func (h *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -76,27 +80,21 @@ func (h *Router) Use(handlers []middleware.Chainable) {
 }
 
 func (h *Router) handle(method method, path string, handler http.Handler) error {
-	/*if h.tree.v == 0x0 {
-		h.tree.v = path[0]
-
-		h.tree.lt = &tree{}
-		h.tree.eq = &tree{}
-		h.tree.gt = &tree{}
-		path = path[1 : len(path)-1]
-
-	}*/
+	if h.tree == nil {
+		h.tree = &Tree{router: h}
+	}
 
 	if h.handler == nil {
 		h.handler = h.tree
 	}
 
+	if h.NotFound == nil {
+		h.NotFound = http.HandlerFunc(http.NotFound)
+	}
+
 	pat := NewPattern(method, path, handler)
 	h.tree.root = h.tree.handle(h.tree.root, pat, 0)
-	/*if err := h.tree.handle(method, path, handler); err != nil {
-		fmt.Printf("could not register HotPath '%s' - %s", path, err)
-		return err
-	}*/
-	//printTraversal(h.tree.root)
+
 	return nil
 }
 

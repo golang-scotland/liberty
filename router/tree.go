@@ -9,7 +9,8 @@ import (
 )
 
 type Tree struct {
-	root *node
+	root   *node
+	router *Router
 }
 
 // a ternary search tree/trie (tree for the avoidance of pronunciation doubt)
@@ -146,126 +147,6 @@ func nodeAfterVarName(n *node, lastNode bool) *node {
 	return nil
 }
 
-// register a given handler for a pattern with a specific HTTP verb
-func (t *node) handleDeprecated(method method, pattern string, handler http.Handler) error {
-	//fmt.Println("HANDLE", method, pattern, handler)
-	if handler == nil {
-		panic("Handler may not be nil")
-	}
-	l := len(pattern)
-	lastChar := l - 1
-
-	for i := 0; i < l; {
-		current := pattern[i]
-		if t.v == 0x0 {
-			t.v = current
-			t.lt = &node{}
-			t.eq = &node{}
-			t.gt = &node{}
-		}
-
-		switch {
-		/*
-			case current == ':' && pattern[i-1] == '/' && i != lastChar:
-				var varEnd int
-				var err error
-				if varEnd, err = findVarEnd(i+1, pattern); err != nil {
-					return err
-				}
-
-				t.v = current
-				//		case v == '/' && i != lastChar && pattern[i+1] == ':':
-				//			if varEnd, err = routeVarEnd(i, pattern); err != nil {
-				//				return err
-				//			}
-				//			t = t.gt
-				//			t.v = ':'
-				t.varName = string(pattern[i+1 : varEnd])
-				//t.lt = &tree{}
-				//t.eq = &tree{}
-				//t.gt = &tree{}
-				//
-				i = varEnd
-				/*fmt.Println("VAR HANDLE", t)
-				if varEnd > lastChar {
-					if t.handlers == nil {
-						t.handlers = make(mHandlers, 0)
-					}
-					t.handlers[method] = handler
-					fmt.Println("HANDLE LAST VAR", method, pattern, handler, t.handlers)
-					return nil
-				}
-				//
-				t = t.lt
-		*/
-
-		case current < t.v:
-			fmt.Println("LESS THAN", current, string(current), t.v, string(t.v))
-			t = t.lt
-
-		case current > t.v:
-			fmt.Println("GREATER THAN", string(current), string(t.v))
-			t = t.gt
-
-		case i == lastChar:
-			fmt.Println("HANDLE END PATH", t, method, pattern, handler)
-			if t.handlers == nil {
-				t.handlers = make(mHandlers, 0)
-			}
-			t.handlers[method] = handler
-			return nil
-
-		default:
-			fmt.Println("EQUAL", string(current), string(t.v))
-			t = t.eq
-			i++
-		}
-	}
-
-	return fmt.Errorf("unable to insert handler for key '%s'", pattern)
-}
-
-func numParams(path string) (n uint) {
-	for i := 0; i < len(path); i++ {
-		if path[i] != ':' && path[i] != '*' {
-			continue
-		}
-		n++
-	}
-
-	return n
-}
-
-func findVarEnd(start int, path string) (end int, err error) {
-	end = start
-	routeLen := len(path)
-	for end < routeLen && path[end] != '/' {
-		switch path[end] {
-		case ':':
-			return 0, fmt.Errorf("invalid character '%s' in variable name", ":")
-		default:
-			end++
-		}
-	}
-
-	return end, nil
-}
-
-func routeVarEnd(start int, path string) (end int, err error) {
-	end = start + 2
-	routeLen := len(path)
-	for end < routeLen && path[end] != '/' {
-		switch path[end] {
-		case ':':
-			return 0, fmt.Errorf("invalid character '%s' in variable name", ":")
-		default:
-			end++
-		}
-	}
-
-	return end, nil
-}
-
 func (t *Tree) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context().Value(CtxKey).(*Context)
 	var handler http.Handler
@@ -277,7 +158,6 @@ func (t *Tree) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	method, ok := methods[r.Method]
-
 	if !ok {
 		notAllowed()
 		return
@@ -285,25 +165,9 @@ func (t *Tree) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	handler = t.Match(method, r.URL.Path, ctx)
 	if handler == nil {
-		http.NotFound(w, r)
+		t.router.NotFound.ServeHTTP(w, r)
 		return
 	}
-
-	/*switch err {
-	case ErrMethodNotAllowed:
-		notAllowed()
-		ctxPool.Put(ctx)
-		return
-	case ErrNoRoute:
-		http.NotFound(w, r)
-		ctxPool.Put(ctx)
-		return
-	default:
-		if err != nil {
-			http.NotFound(w, r)
-			return
-		}
-	}*/
 
 	handler.ServeHTTP(w, r)
 	ctxPool.Put(ctx)
@@ -394,21 +258,6 @@ func (t *node) match(method method, path string, ctx *Context) (http.Handler, er
 	return nil, ErrNoRoute
 }
 
-func routeVarGet(varStart int, path string) (val string, end int) {
-	end = varStart + 1
-	routeLen := len(path)
-	for end < routeLen && path[end] != '/' {
-		switch path[end] {
-		case '/':
-			return path[varStart:end], end
-		default:
-			end++
-		}
-	}
-
-	return path[varStart+1 : end], end
-}
-
 func printTraversal(t *node) {
 	printTraversalAux(t, []byte(""))
 }
@@ -440,6 +289,7 @@ func printTraversalAux(t *node, prefix []byte) {
 	}
 }
 
+/*
 func (t *node) longestPrefix(mthd method, key string, ctx *Context) (http.Handler, error) {
 	if len(key) < 1 {
 		return nil, ErrNoRoute
@@ -449,6 +299,7 @@ func (t *node) longestPrefix(mthd method, key string, ctx *Context) (http.Handle
 
 	return t.match(mthd, key[0:length], ctx)
 }
+*/
 
 func prefix(t *node, key string, index int) int {
 	if index == len(key) || t == nil {
