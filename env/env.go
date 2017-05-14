@@ -29,6 +29,7 @@ func (e Env) String() string {
 	return names[e]
 }
 
+// Get the current env var 'APP_ENV' value or default to Dev
 func Get() Env {
 	appEnv := os.Getenv("APP_ENV")
 	switch appEnv {
@@ -39,7 +40,7 @@ func Get() Env {
 	case "dev", "":
 		return Dev
 	default:
-		return Stage
+		return Dev
 	}
 }
 
