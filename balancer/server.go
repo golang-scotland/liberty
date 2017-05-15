@@ -1,12 +1,14 @@
 package balancer
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/tls"
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -164,20 +166,29 @@ func setTLSConfig(s *http.Server, certs []*Crt) {
 }
 
 func newAutocertManager() *autocert.Manager {
+
 	m := &autocert.Manager{
-		Cache:  autocert.DirCache("/Users/graham/tmp/acme"),
-		Email:  "graham.anderson@gmail.com",
+		Client: newAcmeClient(),
+		Email:  os.Getenv("ACME_EMAIL"),
 		Prompt: autocert.AcceptTOS,
 		HostPolicy: autocert.HostWhitelist(
-			"excession.golang.scot",
+			strings.Split(os.Getenv("ACME_DOMAINS"), ",")...,
 		),
+	}
+
+	// cache dir should really always be specified to some persistent block
+	// storage, we wont fail to get a cert but the cert will onely be alive for
+	// the lifetime of this manager in the current process.
+	cacheDir := os.Getenv("ACME_CACHE")
+	if cacheDir != "" {
+		m.Cache = autocert.DirCache(cacheDir)
 	}
 
 	return m
 }
 
 func newAcmeClient() *acme.Client {
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		log.Fatal(err)
 	}
