@@ -21,7 +21,7 @@ const (
 // Balancer is a balanced reverse HTTP proxy
 type Balancer struct {
 	config *Config
-	groups map[string]*ServerGroup
+	group  *ServerGroup
 	router *router.Router
 }
 
@@ -35,16 +35,19 @@ type Config struct {
 func NewBalancer(config *Config) *Balancer {
 	b := &Balancer{
 		config: config,
-		groups: map[string]*ServerGroup{},
+		group:  *ServerGroup,
 		router: router.NewRouter(),
 	}
 
+	servers := make([]*http.Server, 0)
+
 	for _, proxy := range b.config.Proxies {
-		err := proxy.Configure(b.config.Whitelist)
+		err := proxy.Configure(b.config.Whitelist, b.router)
 		if err != nil {
 			fmt.Printf("the proxy for '%s' was not configured - %s", proxy.HostPath, err)
 			continue
 		}
+
 		// set TLS options on the proxy servers
 		if proxy.Tls {
 			for i := range proxy.Servers {
@@ -52,13 +55,7 @@ func NewBalancer(config *Config) *Balancer {
 			}
 		}
 
-		b.groups[proxy.HostPath] = NewServerGroup(b.router, proxy.Servers)
-		err = b.router.Get("/", b.groups[proxy.HostPath])
-		//err = b.router.Handle(proxy.HostPath, b.groups[proxy.HostPath])
-		if err != nil {
-			fmt.Printf("unable to register the HostPath '%s' with this route", proxy.HostPath)
-			continue
-		}
+		servers = append(servers, proxy.Servers...)
 	}
 
 	return b

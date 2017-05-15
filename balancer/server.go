@@ -79,8 +79,10 @@ func NewServerGroup(router *router.Router, servers []*http.Server) *ServerGroup 
 			s:       s,
 			handler: s.Handler,
 		}
-		s.ConnState = srv.trackState
+
 		s.Handler = router
+
+		s.ConnState = srv.trackState
 		sg.servers = append(sg.servers, srv)
 	}
 	//fmt.Sprintf("%#v\n", sg)

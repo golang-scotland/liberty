@@ -3,6 +3,7 @@ package router
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -67,6 +68,7 @@ func NewRouter() *Router {
 }
 
 func (h *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	fmt.Println(r.URL.String())
 	ctx := ctxPool.Get().(*Context)
 	ctx.Reset()
 	r = r.WithContext(context.WithValue(r.Context(), CtxKey, ctx))
@@ -120,6 +122,16 @@ func (h *Router) Delete(path string, handler http.Handler) error {
 
 func (h *Router) match(method method, path string, ctx *Context) http.Handler {
 	return h.tree.Match(method, path, ctx)
+}
+
+// TODO make these setters noop on error and return last error
+func (h *Router) All(path string, handler http.Handler) error {
+	h.handle(GET, path, handler)
+	h.handle(POST, path, handler)
+	h.handle(PUT, path, handler)
+	h.handle(PATCH, path, handler)
+	h.handle(DELETE, path, handler)
+	return nil
 }
 
 type patternVariable struct {

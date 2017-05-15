@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 
+	"golang.scot/liberty/router"
+
 	"github.com/gnanderson/trie"
 )
 
@@ -32,12 +34,12 @@ type Proxy struct {
 // Configure a proxy for use with the paramaters from the parsed yaml config. If
 // a remote host resolves to more than one IP address, we'll create a server and
 // for each. This works because under the hood we're using SO_REUSEPORT.
-func (p *Proxy) Configure(whitelist []*ApiWhitelist) error {
+func (p *Proxy) Configure(whitelist []*ApiWhitelist, router *router.Router) error {
 	p.normalise()
 	if err := p.parseRemoteHost(); err != nil {
 		return err
 	}
-	if err := p.initServers(whitelist); err != nil {
+	if err := p.initServers(whitelist, router); err != nil {
 		return err
 	}
 	return nil
@@ -123,7 +125,7 @@ func (p *Proxy) parseRemoteHost() error {
 	return nil
 }
 
-func (p *Proxy) initServers(whitelist []*ApiWhitelist) error {
+func (p *Proxy) initServers(whitelist []*ApiWhitelist, router *router.Router) error {
 	// add an additional redirect from port 80
 	if p.TlsRedirect && p.HostPort == 443 {
 		s := &http.Server{
@@ -140,11 +142,11 @@ func (p *Proxy) initServers(whitelist []*ApiWhitelist) error {
 		s := &http.Server{
 			Addr: fmt.Sprintf("%s:%d", p.HostIP, p.HostPort),
 		}
-		mux := http.NewServeMux()
 
 		// if this is a websocket proxy, we need to hijack the connection. We'll
 		// have to treat this a little differently.
 		if p.Ws {
+			mux := http.NewServeMux()
 			mux.Handle(p.HostPath, websocketProxy(p.RemoteHost))
 			s.Handler = mux
 			p.Servers = append(p.Servers, s)
@@ -153,12 +155,12 @@ func (p *Proxy) initServers(whitelist []*ApiWhitelist) error {
 
 		remoteShard := strings.Replace(p.RemoteHost, p.remoteHostURL.Host, addr.String(), 1)
 		fmt.Printf("remote shard url: %s\n", remoteShard)
-		err := reverseProxy(p, mux, remoteShard, whitelist)
+		err := reverseProxy(p, router, remoteShard, whitelist)
 		if err != nil {
 			return err
 		}
 
-		s.Handler = mux
+		s.Handler = router
 		p.Servers = append(p.Servers, s)
 	}
 
@@ -167,7 +169,7 @@ func (p *Proxy) initServers(whitelist []*ApiWhitelist) error {
 
 // build a chain of handlers, with the last one actually performing the reverse
 // proxy to the remote resource.
-func reverseProxy(p *Proxy, mux *http.ServeMux, remoteUrl string, whitelist []*ApiWhitelist) error {
+func reverseProxy(p *Proxy, router *router.Router, remoteUrl string, whitelist []*ApiWhitelist) error {
 
 	// if this remote host is not a valid resource we can't continue
 	remote, err := url.Parse(remoteUrl)
@@ -231,12 +233,12 @@ func reverseProxy(p *Proxy, mux *http.ServeMux, remoteUrl string, whitelist []*A
 
 	// link the handler chain
 	chain := NewChain(handlers...).Link(final)
-	mux.Handle(p.HostPath, chain)
+	router.All(p.HostPath, chain)
 	if len(p.HostAlias) > 0 {
 		chunks := strings.Split(p.HostPath, ".")
 		for _, alias := range p.HostAlias {
 			chunks[0] = alias
-			mux.Handle(strings.Join(chunks, "."), chain)
+			router.All(strings.Join(chunks, "."), chain)
 		}
 	}
 	return nil
