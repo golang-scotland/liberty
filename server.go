@@ -1,10 +1,11 @@
-package balancer
+package liberty
 
 import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -18,7 +19,6 @@ import (
 	"golang.org/x/crypto/acme/autocert"
 
 	"golang.scot/liberty/env"
-	"golang.scot/liberty/router"
 )
 
 const letsEncryptSandboxUrl = "https://acme-staging.api.letsencrypt.org/directory"
@@ -53,10 +53,6 @@ func (s *server) trackState(c net.Conn, cs http.ConnState) {
 	}
 }
 
-func testNewServer() http.Server {
-	return http.Server{}
-}
-
 // ServerGroup defines a grouping of servers which can be have requests routed
 // to via a liberty router
 type ServerGroup struct {
@@ -64,28 +60,27 @@ type ServerGroup struct {
 	servers []*server
 }
 
-// NewServerGroup creates a server group from a router and a slice of standard
+// NewServerGroup creates a server group from a balancer and a slice of standard
 // library http servers
-func NewServerGroup(router *router.Router, servers []*http.Server) *ServerGroup {
+func NewServerGroup(balancer *Balancer, servers []*http.Server) *ServerGroup {
 	sg := &ServerGroup{
 		w:       &sync.Mutex{},
 		servers: []*server{},
 	}
+
 	for _, s := range servers {
-		if strings.HasSuffix(s.Addr, "80") {
-			continue
+		if !strings.HasSuffix(s.Addr, ":80") {
+			s.Handler = balancer
 		}
 		srv := &server{
 			s:       s,
 			handler: s.Handler,
 		}
 
-		s.Handler = router
-
 		s.ConnState = srv.trackState
 		sg.servers = append(sg.servers, srv)
 	}
-	//fmt.Sprintf("%#v\n", sg)
+
 	return sg
 }
 
@@ -127,66 +122,46 @@ func (sg *ServerGroup) Swap(i, j int) {
 	sg.servers[i], sg.servers[j] = sg.servers[j], sg.servers[i]
 }
 
-func setTLSConfig(s *http.Server, certs []*Crt) {
+func setTLSConfig(s *http.Server, domains []string) {
+	if strings.HasSuffix(s.Addr, ":80") {
+		return
+	}
+
 	addr := s.Addr
 	if addr == "" {
 		addr = ":https"
 	}
 	// min version doesn't include SSL v3.0, but we don't want that anyway
 	// because of the POODLE attack...
-	config := &tls.Config{MinVersion: tls.VersionTLS10}
+	//config := &tls.Config{MinVersion: tls.VersionTLS10}
 
 	// *we* will choose the preffered cipher where possible
-	config.PreferServerCipherSuites = true
-	if s.TLSConfig != nil {
-		*config = *s.TLSConfig
-	}
-	if config.NextProtos == nil {
-		config.NextProtos = []string{"http/1.1"}
-	}
+	//config.PreferServerCipherSuites = true
+	//if s.TLSConfig != nil {
+	//		*config = *s.TLSConfig
+	//}
+	//if config.NextProtos == nil {
+	//	config.NextProtos = []string{"http/1.1"}
+	//}
 
-	/*var err error
-	config.Certificates = make([]tls.Certificate, len(certs))
-	for i := 0; i < len(certs); i++ {
-		config.Certificates[i], err = tls.LoadX509KeyPair(
-			certs[i].CertFile, certs[i].KeyFile,
-		)
-		if err != nil {
-			panic(err)
-		}
-	}
-	*/
+	//fmt.Println("DOMAINS", domains)
+
 	// Lets Encrypt!
-	certManager := newAutocertManager()
-	config.GetCertificate = certManager.GetCertificate
+	s.TLSConfig = &tls.Config{}
+	m := &autocert.Manager{
+		Client:     newAcmeClient(),
+		Cache:      autocert.DirCache("/etc/liberty/"),
+		Email:      os.Getenv("ACME_EMAIL"),
+		Prompt:     autocert.AcceptTOS,
+		HostPolicy: autocert.HostWhitelist(domains...),
+	}
+	s.TLSConfig.GetCertificate = m.GetCertificate
 
 	// this will invoke SNI extensions. Note that some (typically older) clients
 	// don't support this.
-	config.BuildNameToCertificate()
+	// config.BuildNameToCertificate()
 
-	s.TLSConfig = config
-}
-
-func newAutocertManager() *autocert.Manager {
-
-	m := &autocert.Manager{
-		Client: newAcmeClient(),
-		Email:  os.Getenv("ACME_EMAIL"),
-		Prompt: autocert.AcceptTOS,
-		HostPolicy: autocert.HostWhitelist(
-			strings.Split(os.Getenv("ACME_DOMAINS"), ",")...,
-		),
-	}
-
-	// cache dir should really always be specified to some persistent block
-	// storage, we wont fail to get a cert but the cert will onely be alive for
-	// the lifetime of this manager in the current process.
-	cacheDir := os.Getenv("ACME_CACHE")
-	if cacheDir != "" {
-		m.Cache = autocert.DirCache(cacheDir)
-	}
-
-	return m
+	//s.TLSConfig = config
 }
 
 func newAcmeClient() *acme.Client {
@@ -201,4 +176,21 @@ func newAcmeClient() *acme.Client {
 	}
 
 	return client
+}
+
+type VHost struct {
+	host    string
+	handler http.Handler
+}
+
+func (v *VHost) String() string {
+	return v.host
+}
+
+func (v *VHost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Host != v.host {
+		panic(fmt.Sprintf("vhost '%s' cannot serve traffic for '%s'\n", v.host, r.Host))
+	}
+
+	v.handler.ServeHTTP(w, r)
 }

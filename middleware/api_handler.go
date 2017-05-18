@@ -74,7 +74,7 @@ type ApiHandler struct {
 func NewApiHandler(whitelist []*ApiWhitelist) *ApiHandler {
 	tr := &trie.Trie{}
 	for _, wl := range whitelist {
-		nets := ips2nets(wl.IPs)
+		nets := IPs2nets(wl.IPs)
 		awl := &whitelistEntry{nets, wl.Hostnames}
 		tr.Put(wl.Path, awl)
 	}
@@ -111,4 +111,17 @@ func (ah *ApiHandler) Chain(h http.Handler) http.Handler {
 		// endpoint doesn't have an entry
 		http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 	})
+}
+
+// convert a list of IP address strings in CIDR format to IPNets
+func IPs2nets(ips []string) []*net.IPNet {
+	nets := make([]*net.IPNet, 0)
+	for _, ipRange := range ips {
+		_, ipNet, err := net.ParseCIDR(ipRange)
+		if err != nil {
+			panic(err)
+		}
+		nets = append(nets, ipNet)
+	}
+	return nets
 }

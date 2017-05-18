@@ -1,5 +1,5 @@
 // Package router implements a ternary search tree based HTTP router.
-package router
+package liberty
 
 import (
 	"context"

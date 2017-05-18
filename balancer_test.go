@@ -1,4 +1,4 @@
-package balancer
+package liberty
 
 import (
 	"fmt"
@@ -10,8 +10,6 @@ import (
 	"net/url"
 	"testing"
 	"time"
-
-	"golang.scot/liberty/middleware"
 )
 
 func newProxy(addr string) *httputil.ReverseProxy {
@@ -42,13 +40,13 @@ func TestReusePort(t *testing.T) {
 	}
 
 	conf := &Config{
-		Proxies: []*middleware.Proxy{
+		Proxies: []*Proxy{
 			{
 				HostPath:    "127.0.0.1:8989/",
 				RemoteHost:  "127.0.0.1:3456",
 				HostIP:      "127.0.0.1",
 				HostPort:    8989,
-				RemoteAddrs: addrs,
+				remoteAddrs: addrs,
 			},
 		},
 	}
@@ -57,7 +55,7 @@ func TestReusePort(t *testing.T) {
 
 	var balanceErr error
 	go func() {
-		balanceErr = balancer.Balance(Default)
+		balanceErr = balancer.Balance()
 		if balanceErr != nil {
 			fmt.Sprintf("balancer server error: %s", balanceErr)
 			t.Fatalf("balancer server error: %s", balanceErr)
@@ -76,7 +74,7 @@ func TestReusePort(t *testing.T) {
 
 	var one, two, three int
 
-	for i := 0; i <= 1; i++ {
+	for i := 0; i <= 100; i++ {
 
 		go func() {
 			resp, err := c.Get("http://127.0.0.1:8989/")
@@ -105,6 +103,7 @@ func TestReusePort(t *testing.T) {
 
 	time.Sleep(5 * time.Second)
 	if one == 0 || two == 0 || three == 0 {
-		t.Fail()
+		t.Fatalf("one:%d, two:%d, three:%d", one, two, three)
+
 	}
 }

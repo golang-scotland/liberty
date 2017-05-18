@@ -16,10 +16,10 @@ import (
 )
 
 const (
-	apiHandler      = "api"
-	webHandler      = "web"
-	promHandler     = "prometheus"
-	redirectHandler = "redirect"
+	ApiType      = "api"
+	WebType      = "web"
+	PromType     = "prometheus"
+	RedirectType = "redirect"
 )
 
 type HelloWorld struct{}
@@ -89,8 +89,8 @@ func (hl *GzipHandler) Chain(h http.Handler) http.Handler {
 // in!
 type IPRestrictedHandler struct {
 	Allowed     []*net.IPNet
-	handlerType string
-	openPaths   *trie.Trie
+	HandlerType string
+	OpenPaths   *trie.Trie
 }
 
 func (rh *IPRestrictedHandler) Chain(h http.Handler) http.Handler {
@@ -116,7 +116,7 @@ func (rh *IPRestrictedHandler) Chain(h http.Handler) http.Handler {
 		//
 		// 1. Open paths are allowed
 		// 2. If the path is not open but the IP is allowed, proceed
-		if rh.handlerType == apiHandler && rh.openPaths.LongestPrefix(r.URL.String()) != "" {
+		if rh.HandlerType == ApiType && rh.OpenPaths.LongestPrefix(r.URL.String()) != "" {
 			h.ServeHTTP(w, r)
 			return
 		}
@@ -193,13 +193,18 @@ func (ih *InstrumentedHandler) Chain(h http.Handler) http.Handler {
 	return http.HandlerFunc(prometheus.InstrumentHandler(ih.Name, h))
 }
 
-func redir(w http.ResponseWriter, r *http.Request) {
+func RedirectTemp(w http.ResponseWriter, r *http.Request) {
 	url := fmt.Sprintf("https://%s%s", r.Host, r.RequestURI)
 	http.Redirect(w, r, url, 302)
 }
 
+func RedirectPerm(w http.ResponseWriter, r *http.Request) {
+	url := fmt.Sprintf("https://%s%s", r.Host, r.RequestURI)
+	http.Redirect(w, r, url, 301)
+}
+
 // hijack the connection and dial the backend to do the HTTP upgrade dance
-func websocketProxy(target string) http.Handler {
+func WebsocketProxy(target string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		d, err := net.Dial("tcp", target)
 		if err != nil {

@@ -1,11 +1,11 @@
-package middleware
+package liberty
 
 import (
 	"net/http"
 	"strings"
 )
 
-// Transport wraps a stadnard library http roundtripper
+// Transport wraps a standard library http roundtripper
 type Transport struct {
 	tr   http.RoundTripper
 	tls  bool
