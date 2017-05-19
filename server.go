@@ -150,7 +150,7 @@ func setTLSConfig(s *http.Server, domains []string) {
 	s.TLSConfig = &tls.Config{}
 	m := &autocert.Manager{
 		Client:     newAcmeClient(),
-		Cache:      autocert.DirCache("/etc/liberty/"),
+		Cache:      autocert.DirCache(os.Getenv("ACME_CACHE")),
 		Email:      os.Getenv("ACME_EMAIL"),
 		Prompt:     autocert.AcceptTOS,
 		HostPolicy: autocert.HostWhitelist(domains...),

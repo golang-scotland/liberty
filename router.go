@@ -3,7 +3,6 @@ package liberty
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -68,7 +67,6 @@ func NewRouter() *Router {
 }
 
 func (h *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	fmt.Println(r.URL.String())
 	ctx := ctxPool.Get().(*Context)
 	ctx.Reset()
 	r = r.WithContext(context.WithValue(r.Context(), CtxKey, ctx))
