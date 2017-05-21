@@ -1,8 +1,6 @@
 package middleware
 
 import (
-	"crypto/subtle"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -24,16 +22,13 @@ func hasher(s string) []byte {
 	return hash
 }
 
+var userHash = hasher(os.Getenv("LIBERTY_USER"))
+var passHash = hasher(os.Getenv("LIBERTY_PASS"))
+
 func BasicAuthHandler(handler http.Handler) http.Handler {
-	userHash := hasher(os.Getenv("LIBERTY_USER"))
-	passHash := hasher(os.Getenv("LIBERTY_PASS"))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		user, pass, ok := r.BasicAuth()
-		fmt.Println("BASIC_AUTH", user, pass)
-		fmt.Println("BASIC_HASHED", string(userHash), string(passHash))
-		fmt.Println("CREDS_HASHED", string(hasher(user)), string(hasher(pass)))
-		if !ok || subtle.ConstantTimeCompare(hasher(user),
-			userHash) != 1 || subtle.ConstantTimeCompare(hasher(pass), passHash) != 1 {
+		if !ok || bcrypt.CompareHashAndPassword(userHash, []byte(user)) != nil || bcrypt.CompareHashAndPassword(passHash, []byte(pass)) != nil {
 			w.Header().Set("WWW-Authenticate", `Basic realm=Username and Password`)
 			http.Error(w, "Unauthorized.", http.StatusUnauthorized)
 			return
