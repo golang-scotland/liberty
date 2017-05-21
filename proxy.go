@@ -119,7 +119,7 @@ func (p *Proxy) parseRemoteHost() error {
 		}
 		p.remoteAddrs = addrs
 	}
-	fmt.Printf("Backend IP's for proxy: %#s\n", p.remoteAddrs)
+	//fmt.Printf("Backend IP's for proxy: %#s\n", p.remoteAddrs)
 
 	return nil
 }
@@ -148,7 +148,7 @@ func (p *Proxy) initServers(whitelist []*middleware.ApiWhitelist, router http.Ha
 		}
 
 		remoteShard := strings.Replace(p.RemoteHost, p.remoteHostURL.Host, addr.String(), 1)
-		fmt.Printf("remote shard url: %s\n", remoteShard)
+		//fmt.Printf("remote shard url: %s\n", remoteShard)
 
 		err := reverseProxy(p, router, remoteShard, whitelist)
 		if err != nil {
@@ -171,7 +171,7 @@ func reverseProxy(p *Proxy, handler http.Handler, remoteUrl string, whitelist []
 		return fmt.Errorf("cannot parse remote url '%s' - %s", remoteUrl, err)
 	}
 
-	fmt.Printf("reverse proxying to: %#v\n", remote)
+	//fmt.Printf("reverse proxying to: %#v\n", remote)
 
 	// the first handler should be a prometheus instrumented handler
 	handlers := make([]middleware.Chainable, 0)
@@ -211,10 +211,10 @@ func reverseProxy(p *Proxy, handler http.Handler, remoteUrl string, whitelist []
 	switch p.HandlerType {
 	default:
 		//final = GoGetHandler(reverseProxy)
-		final = reverseProxy
+		final = middleware.BasicAuthHandler(reverseProxy)
 	case middleware.ApiType:
 		handlers = append(handlers, middleware.NewApiHandler(whitelist))
-		final = reverseProxy
+		final = middleware.BasicAuthHandler(reverseProxy)
 	/*
 		case promHandler:
 			final = prometheus.InstrumentHandler(env.Hostname(), prometheus.Handler())

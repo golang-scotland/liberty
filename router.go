@@ -51,7 +51,7 @@ func (m method) String() string {
 type mHandlers map[method]http.Handler
 
 // Router is a ternary search tree based HTTP request router. Router
-// satifsies the standard libray http.Handler interface.
+// satisfies the standard libray http.Handler interface.
 type Router struct {
 	tree     *Tree
 	chain    *middleware.Chain

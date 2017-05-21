@@ -127,27 +127,20 @@ func setTLSConfig(s *http.Server, domains []string) {
 		return
 	}
 
-	addr := s.Addr
-	if addr == "" {
-		addr = ":https"
+	// Once up on a when we used to use SSL, not anymore.
+	// TODO is this not the default TLS config for go now?
+	config := &tls.Config{MinVersion: tls.VersionTLS10}
+
+	// *we* will choose...
+	// TODO do we still care about client negotiation / downgrades?
+	config.PreferServerCipherSuites = true
+
+	// because someone else might have an opinion too
+	if s.TLSConfig != nil {
+		*config = *s.TLSConfig
 	}
-	// min version doesn't include SSL v3.0, but we don't want that anyway
-	// because of the POODLE attack...
-	//config := &tls.Config{MinVersion: tls.VersionTLS10}
-
-	// *we* will choose the preffered cipher where possible
-	//config.PreferServerCipherSuites = true
-	//if s.TLSConfig != nil {
-	//		*config = *s.TLSConfig
-	//}
-	//if config.NextProtos == nil {
-	//	config.NextProtos = []string{"http/1.1"}
-	//}
-
-	//fmt.Println("DOMAINS", domains)
 
 	// Lets Encrypt!
-	s.TLSConfig = &tls.Config{}
 	m := &autocert.Manager{
 		Client:     newAcmeClient(),
 		Cache:      autocert.DirCache(os.Getenv("ACME_CACHE")),
@@ -155,13 +148,9 @@ func setTLSConfig(s *http.Server, domains []string) {
 		Prompt:     autocert.AcceptTOS,
 		HostPolicy: autocert.HostWhitelist(domains...),
 	}
-	s.TLSConfig.GetCertificate = m.GetCertificate
+	config.GetCertificate = m.GetCertificate
 
-	// this will invoke SNI extensions. Note that some (typically older) clients
-	// don't support this.
-	// config.BuildNameToCertificate()
-
-	//s.TLSConfig = config
+	s.TLSConfig = config
 }
 
 func newAcmeClient() *acme.Client {

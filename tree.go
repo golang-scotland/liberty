@@ -8,12 +8,13 @@ import (
 	"github.com/pkg/errors"
 )
 
+// Tree is a ternary search trie used to map URL paths as application or public
+// API routes (with or without parameters).
 type Tree struct {
 	root   *node
 	router *Router
 }
 
-// a ternary search tree/trie (tree for the avoidance of pronunciation doubt)
 type node struct {
 	lt         *node
 	eq         *node
@@ -175,37 +176,6 @@ func (t *Tree) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 var ErrMethodNotAllowed = errors.New("Method verb for this routing pattern is not registered.")
 var ErrNoRoute = errors.New("This route cannot be matched.")
-
-func printTraversal(t *node) {
-	printTraversalAux(t, []byte(""))
-}
-
-func printTraversalAux(t *node, prefix []byte) {
-	if t != nil {
-
-		/* Start normal in-order traversal.
-		   This prints all words that come alphabetically before the words rooted here.*/
-		printTraversalAux(t.lt, prefix)
-
-		/* List all words starting with the current character. */
-		if t.handlers != nil {
-			endChars := append(prefix, t.v)
-			fmt.Println(string(endChars))
-		}
-
-		if t.eq != nil {
-			eqChars := append(prefix, t.v)
-			printTraversalAux(t.eq, eqChars)
-		}
-
-		/* Finish the in-order traversal by listing all words that come after this word.*/
-		if t.gt != nil {
-			gtChars := append(prefix, t.gt.v)
-			printTraversalAux(t.gt, gtChars)
-		}
-
-	}
-}
 
 /*
 func (t *node) longestPrefix(mthd method, key string, ctx *Context) (http.Handler, error) {
