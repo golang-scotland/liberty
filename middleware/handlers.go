@@ -19,6 +19,7 @@ const (
 	WebType      = "web"
 	PromType     = "prometheus"
 	RedirectType = "redirect"
+	GoGetType    = "goget"
 )
 
 type GzipHandler struct{}

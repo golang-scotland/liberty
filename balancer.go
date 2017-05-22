@@ -87,6 +87,7 @@ func (b *Balancer) Balance() error {
 
 func (b *Balancer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if vhost, ok := b.secure[r.Host]; ok {
+		fmt.Println(vhost, r.URL.Path)
 		vhost.handler.ServeHTTP(w, r)
 		return
 	}

@@ -150,6 +150,7 @@ func nodeAfterVarName(n *node, lastNode bool) *node {
 
 func (t *Tree) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context().Value(CtxKey).(*Context)
+	defer ctxPool.Put(ctx)
 	var handler http.Handler
 	//var err error
 	var method method
@@ -171,7 +172,6 @@ func (t *Tree) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	handler.ServeHTTP(w, r)
-	ctxPool.Put(ctx)
 }
 
 var ErrMethodNotAllowed = errors.New("Method verb for this routing pattern is not registered.")

@@ -210,11 +210,12 @@ func reverseProxy(p *Proxy, handler http.Handler, remoteUrl string, whitelist []
 	var final http.Handler
 	switch p.HandlerType {
 	default:
-		//final = GoGetHandler(reverseProxy)
 		final = middleware.BasicAuthHandler(reverseProxy)
 	case middleware.ApiType:
 		handlers = append(handlers, middleware.NewApiHandler(whitelist))
 		final = middleware.BasicAuthHandler(reverseProxy)
+	case middleware.GoGetType:
+		final = middleware.GoGetHandler(reverseProxy)
 	/*
 		case promHandler:
 			final = prometheus.InstrumentHandler(env.Hostname(), prometheus.Handler())
@@ -231,6 +232,7 @@ func reverseProxy(p *Proxy, handler http.Handler, remoteUrl string, whitelist []
 
 	router := handler.(*Router)
 	router.All(path, chain)
+	router.NotFound = chain
 
 	if len(p.HostAlias) > 0 {
 		chunks := strings.Split(p.HostPath, ".")

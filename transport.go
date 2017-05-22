@@ -23,16 +23,9 @@ func (t *Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 		if t.cors != nil && len(t.cors) > 0 {
 			resp.Header.Set("Access-Control-Allow-Origin", strings.Join(t.cors, " "))
 		}
-		resp.Header.Set("Vary", "Accept-Encoding")
 		resp.Header.Set("Server", "Liberty")
 		resp.Header.Set("X-Frame-Options", "SAMEORIGIN")
-		/*setEtag(resp)
-		if eTagMatch(r, resp) {
-			return resp, nil
-		}
-		compress(r, resp)
-		maxAge(resp)
-		*/
+		resp.Header.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 	}
 	return resp, err
 }
