@@ -133,10 +133,7 @@ func (h *Router) All(path string, handler http.Handler) error {
 }
 
 type patternVariable struct {
-	name       string
-	typ        string
-	endLoc     int
-	endLocNode *node
+	name string
 }
 
 type pattern struct {
@@ -166,9 +163,7 @@ func (p *pattern) setVarCount() {
 			splits := strings.Split(p.str[i+1:], "/")
 			p.varCount++
 			p.locs[i] = &patternVariable{
-				name:   splits[0],
-				typ:    "default",
-				endLoc: i + len(splits[0]),
+				name: splits[0],
 			}
 		}
 	}

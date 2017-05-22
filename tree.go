@@ -22,7 +22,6 @@ type node struct {
 	v          byte
 	handlers   mHandlers
 	varName    string
-	varEnd     *node
 	varPattern *pattern
 }
 
@@ -68,57 +67,85 @@ func (t *Tree) Match(method method, path string, ctx *Context) http.Handler {
 	l := len(path)
 	n := t.root
 	i := 0
-	var nextString int
 	var match int
-	var matchedVal string
 	var c byte
 
 	for i < l {
 		c = path[i]
 		switch {
-		case c == '/' && n.eq != nil && (n.eq.v == ':' || n.eq.v == '*'):
-			for match = i + 1; match < len(path) && path[match] != '/'; match++ {
-				if match == len(path)-1 {
-					matchedVal = path[i+1 : match+1]
-
-				} else {
-					matchedVal = path[i+1 : match+1]
-				}
-
-			}
-
-			ctx.Params.Add(n.eq.varName, matchedVal)
-
-			nextString = strings.Index(path[i+1:], "/")
-			if nextString == -1 || n.eq.v == '*' {
-				return nodeAfterVarName(n.eq, true).handlers[method]
-			}
+		default:
+			n = n.eq
 			i++
-			i = i + nextString
-			n = nodeAfterVarName(n.eq, false)
+		case c == '/' && n.eq != nil && (n.eq.v == ':' || n.eq.v == '*'):
+			// find and add the variable value to our context
+			match = i + 1
+			for match < l && path[match] != '/' {
+				match++
+			}
+			ctx.Params.Add(n.eq.varName, path[i+1:match])
+
+			// now we need to skip a few nodes and find the location in the tree
+			// where the current variable name ends
+			nextSegment := strings.Index(path[i+1:], "/")
+			lastNode := nextSegment == -1 || n.eq.v == '*'
+			i = i + 1 + nextSegment
+
+			var sn *node
+			var sc byte
+			sn = n.eq
+
+			searchPath := string(sn.v) + sn.varName
+			if !lastNode && sn.v != '*' {
+				searchPath = searchPath + "/"
+			}
+
+			sl := len(searchPath)
+			si := 0
+			for si < sl {
+				sc = searchPath[si]
+				switch {
+				default:
+					sn = sn.eq
+					si++
+				case sc < sn.v:
+					sn = sn.lt
+				case sc > sn.v:
+					sn = sn.gt
+				case si == sl-1:
+					if lastNode {
+						return sn.handlers[method]
+					}
+					n = sn
+				}
+			}
+			/*
+				if  {
+					return nodeAfterVarName(n.eq, true).handlers[method]
+				}
+				n = nodeAfterVarName(n.eq, false)
+			*/
 
 			continue
 		case n == nil || n.v == 0x0:
-			return nil
+			return t.router.NotFound
 		case c < n.v:
 			n = n.lt
 		case c > n.v:
 			n = n.gt
 		case i == l-1:
-			if handler, ok := n.handlers[method]; ok {
-				return handler
-			}
-		default:
-			n = n.eq
-			i++
+			/*
+				if handler, ok := n.handlers[method]; ok {
+					return handler
+				}
+			*/
+			return n.handlers[method]
 		}
 	}
 
-	return nil
+	return t.router.NotFound
 }
 
 func nodeAfterVarName(n *node, lastNode bool) *node {
-
 	var path string
 	var c byte
 	var l, i int
@@ -132,16 +159,16 @@ func nodeAfterVarName(n *node, lastNode bool) *node {
 
 	for i < l {
 		c = path[i]
-
-		if c < n.v {
-			n = n.lt
-		} else if c > n.v {
-			n = n.gt
-		} else if i == l-1 {
-			return n
-		} else {
+		switch {
+		default:
 			n = n.eq
 			i++
+		case c < n.v:
+			n = n.lt
+		case c > n.v:
+			n = n.gt
+		case i == l-1:
+			return n
 		}
 	}
 
@@ -150,28 +177,16 @@ func nodeAfterVarName(n *node, lastNode bool) *node {
 
 func (t *Tree) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context().Value(CtxKey).(*Context)
-	defer ctxPool.Put(ctx)
-	var handler http.Handler
-	//var err error
-	var method method
-	var notAllowed = func() {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		w.Write(nil)
-	}
 
 	method, ok := methods[r.Method]
 	if !ok {
-		notAllowed()
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		return
 	}
 
-	handler = t.Match(method, r.URL.Path, ctx)
-	if handler == nil {
-		t.router.NotFound.ServeHTTP(w, r)
-		return
-	}
+	t.Match(method, r.URL.Path, ctx).ServeHTTP(w, r)
 
-	handler.ServeHTTP(w, r)
+	ctxPool.Put(ctx)
 }
 
 var ErrMethodNotAllowed = errors.New("Method verb for this routing pattern is not registered.")
