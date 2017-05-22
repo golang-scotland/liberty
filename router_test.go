@@ -103,7 +103,6 @@ func TestSingleMatch(t *testing.T) {
 	if ctx.Params.Get("var2") != "barbaz" {
 		t.Errorf("variable mismatch - expected '%s', got '%s'", "foobar", ctx.Params.Get("var2"))
 	}
-	printTraversal(router.tree.root)
 }
 
 func TestGithub(t *testing.T) {
@@ -193,8 +192,6 @@ func TestBuiltTreeMatch(t *testing.T) {
 			t.Error(err)
 		}
 	}
-
-	printTraversal(router.tree.root)
 }
 
 func valuesForBenchmark(numValues int, cb func(string)) {
