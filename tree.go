@@ -88,7 +88,7 @@ func (t *tree) match(method method, path string, ctx *Context) http.Handler {
 			var si int
 
 			searchPath := string(n.v) + n.varName
-			if !lastNode { // && n.v != '*' {
+			if !lastNode { //  && n.v != '*' { // TODO ??? tests ???
 				searchPath = searchPath + "/"
 			}
 			sl := len(searchPath)

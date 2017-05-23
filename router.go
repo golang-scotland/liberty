@@ -91,12 +91,49 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // Use registers a chain of wrapped http.Handlers, the last handler in the chain
 // is always this router itself.
-func (rt *Router) Use(handlers []middleware.Chainable) {
+func (rt *Router) Use(handlers ...middleware.Chainable) {
 	rt.chain = middleware.NewChain(handlers...)
 	rt.handler = rt.chain.Link(rt)
 }
 
-func (rt *Router) handle(method method, path string, handler http.Handler) error {
+// Get registers a URL routing path and handler for the GET HTTP verb
+func (rt *Router) Get(path string, handler http.Handler) {
+	rt.handle(GET, path, handler)
+}
+
+// Post registers a URL routing path and handler for the POST HTTP verb
+func (rt *Router) Post(path string, handler http.Handler) {
+	rt.handle(POST, path, handler)
+}
+
+// Put registers a URL routing path and handler for PUT HTTP verb
+func (rt *Router) Put(path string, handler http.Handler) {
+	rt.handle(PUT, path, handler)
+}
+
+// Patch registers a URL routing path and handler for PATCH HTTP verb
+func (rt *Router) Patch(path string, handler http.Handler) {
+	rt.handle(PATCH, path, handler)
+}
+
+// Delete registers a URL routing path and handler for DELETE HTTP verb
+func (rt *Router) Delete(path string, handler http.Handler) {
+	rt.handle(DELETE, path, handler)
+}
+
+// All registers the path and handler in all known HTTP method verbs
+func (rt *Router) All(path string, handler http.Handler) {
+	rt.handle(GET, path, handler)
+	rt.handle(POST, path, handler)
+	rt.handle(PUT, path, handler)
+	rt.handle(PATCH, path, handler)
+	rt.handle(DELETE, path, handler)
+	rt.handle(OPTIONS, path, handler)
+	rt.handle(RANGE, path, handler)
+	rt.handle(HEAD, path, handler)
+}
+
+func (rt *Router) handle(method method, path string, handler http.Handler) {
 	if rt.tree == nil {
 		rt.tree = &tree{router: rt}
 	}
@@ -107,43 +144,6 @@ func (rt *Router) handle(method method, path string, handler http.Handler) error
 
 	pat := newPattern(method, path, handler)
 	rt.tree.root = rt.tree.handle(rt.tree.root, pat, 0)
-
-	return nil
-}
-
-// Get registers a URL routing path and handler for the GET HTTP verb
-func (rt *Router) Get(path string, handler http.Handler) error {
-	return rt.handle(GET, path, handler)
-}
-
-// Post registers a URL routing path and handler for the POST HTTP verb
-func (rt *Router) Post(path string, handler http.Handler) error {
-	return rt.handle(POST, path, handler)
-}
-
-// Put registers a URL routing path and handler for PUT HTTP verb
-func (rt *Router) Put(path string, handler http.Handler) error {
-	return rt.handle(PUT, path, handler)
-}
-
-// Patch registers a URL routing path and handler for PATCH HTTP verb
-func (rt *Router) Patch(path string, handler http.Handler) error {
-	return rt.handle(PATCH, path, handler)
-}
-
-// Delete registers a URL routing path and handler for DELETE HTTP verb
-func (rt *Router) Delete(path string, handler http.Handler) error {
-	return rt.handle(DELETE, path, handler)
-}
-
-// TODO make these setters noop on error and return last error
-func (rt *Router) All(path string, handler http.Handler) error {
-	rt.handle(GET, path, handler)
-	rt.handle(POST, path, handler)
-	rt.handle(PUT, path, handler)
-	rt.handle(PATCH, path, handler)
-	rt.handle(DELETE, path, handler)
-	return nil
 }
 
 type patternVariable struct {

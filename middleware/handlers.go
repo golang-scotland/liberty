@@ -47,14 +47,6 @@ func (rh *IPRestrictedHandler) Chain(h http.Handler) http.Handler {
 			return
 		}
 
-		// don't block any dev environment
-		/*
-			if appEnv == env.Dev {
-				h.ServeHTTP(w, r)
-				return
-			}
-		*/
-
 		// If this is an API handler we need to restrict access by default
 		// unless the request path has a prefix in the trie of open paths. The
 		// order of access should be...
@@ -137,6 +129,7 @@ func RedirectPerm(w http.ResponseWriter, r *http.Request) {
 }
 
 // hijack the connection and dial the backend to do the HTTP upgrade dance
+// iirc this was copied from ... @bradfitz??
 func WebsocketProxy(target string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		d, err := net.Dial("tcp", target)

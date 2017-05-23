@@ -80,17 +80,11 @@ func TestSingleMatch(t *testing.T) {
 	ctx := ctxPool.Get().(*Context)
 	ctx.Reset()
 
-	if err := router.Get(pattern, mux); err != nil {
-		t.Error(err)
-	}
-	if err := router.Get(pattern2, mux); err != nil {
-		t.Error(err)
-	}
-	if err := router.Get(pattern3, mux); err != nil {
-		t.Error(err)
-	}
+	router.Get(pattern, mux)
+	router.Get(pattern2, mux)
+	router.Get(pattern3, mux)
 
-	match := router.match(GET, path, ctx)
+	match := router.tree.match(GET, path, ctx)
 	if match == nil {
 		t.Errorf("bad search: %s")
 		t.Errorf("pattern registered: %s", pattern)
