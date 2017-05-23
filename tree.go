@@ -1,6 +1,7 @@
 package liberty
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -8,21 +9,21 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Tree is a ternary search trie used to map URL paths as application or public
+// tree is a ternary search trie used to map URL paths as application or public
 // API routes (with or without parameters).
-type Tree struct {
+type tree struct {
 	root   *node
 	router *Router
 }
 
 type node struct {
+	v          byte
 	lt         *node
 	eq         *node
 	gt         *node
-	v          byte
+	varPattern *pattern
 	handlers   mHandlers
 	varName    string
-	varPattern *pattern
 }
 
 func (n *node) String() string {
@@ -34,7 +35,23 @@ func (n *node) String() string {
 	)
 }
 
-func (t *Tree) handle(nd *node, pattern *pattern, index int) *node {
+func (t *tree) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx := ctxPool.Get().(*Context)
+	ctx.Reset()
+	r = r.WithContext(context.WithValue(r.Context(), CtxKey, ctx))
+
+	method, ok := methods[r.Method]
+	if !ok {
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	t.match(method, r.URL.Path, ctx).ServeHTTP(w, r)
+
+	ctxPool.Put(ctx)
+}
+
+func (t *tree) handle(nd *node, pattern *pattern, index int) *node {
 	v := pattern.str[index]
 
 	if nd == nil {
@@ -63,12 +80,13 @@ func (t *Tree) handle(nd *node, pattern *pattern, index int) *node {
 	return nd
 }
 
-func (t *Tree) Match(method method, path string, ctx *Context) http.Handler {
-	l := len(path)
-	n := t.root
-	i := 0
+func (t *tree) match(method method, path string, ctx *Context) http.Handler {
+	var i int
 	var match int
 	var c byte
+
+	n := t.root
+	l := len(path)
 
 	for i < l {
 		c = path[i]
@@ -77,53 +95,44 @@ func (t *Tree) Match(method method, path string, ctx *Context) http.Handler {
 			n = n.eq
 			i++
 		case c == '/' && n.eq != nil && (n.eq.v == ':' || n.eq.v == '*'):
-			// find and add the variable value to our context
 			match = i + 1
 			for match < l && path[match] != '/' {
 				match++
 			}
 			ctx.Params.Add(n.eq.varName, path[i+1:match])
 
-			// now we need to skip a few nodes and find the location in the tree
-			// where the current variable name ends
-			nextSegment := strings.Index(path[i+1:], "/")
+			nextSegment := strings.IndexByte(path[i+1:], '/')
 			lastNode := nextSegment == -1 || n.eq.v == '*'
 			i = i + 1 + nextSegment
 
-			var sn *node
+			n = n.eq
 			var sc byte
-			sn = n.eq
+			var si int
 
-			searchPath := string(sn.v) + sn.varName
-			if !lastNode && sn.v != '*' {
+			searchPath := string(n.v) + n.varName
+			if !lastNode { // && n.v != '*' {
 				searchPath = searchPath + "/"
 			}
-
 			sl := len(searchPath)
-			si := 0
+
 			for si < sl {
 				sc = searchPath[si]
 				switch {
 				default:
-					sn = sn.eq
+					n = n.eq
 					si++
-				case sc < sn.v:
-					sn = sn.lt
-				case sc > sn.v:
-					sn = sn.gt
+				case sc < n.v:
+					n = n.lt
+				case sc > n.v:
+					n = n.gt
 				case si == sl-1:
-					if lastNode {
-						return sn.handlers[method]
-					}
-					n = sn
+					si++
 				}
 			}
-			/*
-				if  {
-					return nodeAfterVarName(n.eq, true).handlers[method]
-				}
-				n = nodeAfterVarName(n.eq, false)
-			*/
+
+			if lastNode {
+				return n.handlers[method]
+			}
 
 			continue
 		case n == nil || n.v == 0x0:
@@ -133,60 +142,11 @@ func (t *Tree) Match(method method, path string, ctx *Context) http.Handler {
 		case c > n.v:
 			n = n.gt
 		case i == l-1:
-			/*
-				if handler, ok := n.handlers[method]; ok {
-					return handler
-				}
-			*/
 			return n.handlers[method]
 		}
 	}
 
 	return t.router.NotFound
-}
-
-func nodeAfterVarName(n *node, lastNode bool) *node {
-	var path string
-	var c byte
-	var l, i int
-
-	path = string(n.v) + n.varName
-	if !lastNode && n.v != '*' {
-		path = path + "/"
-	}
-	l = len(path)
-	i = 0
-
-	for i < l {
-		c = path[i]
-		switch {
-		default:
-			n = n.eq
-			i++
-		case c < n.v:
-			n = n.lt
-		case c > n.v:
-			n = n.gt
-		case i == l-1:
-			return n
-		}
-	}
-
-	return nil
-}
-
-func (t *Tree) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context().Value(CtxKey).(*Context)
-
-	method, ok := methods[r.Method]
-	if !ok {
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
-	t.Match(method, r.URL.Path, ctx).ServeHTTP(w, r)
-
-	ctxPool.Put(ctx)
 }
 
 var ErrMethodNotAllowed = errors.New("Method verb for this routing pattern is not registered.")

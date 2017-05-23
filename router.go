@@ -2,7 +2,6 @@
 package liberty
 
 import (
-	"context"
 	"net/http"
 	"strings"
 
@@ -53,82 +52,78 @@ type mHandlers map[method]http.Handler
 // Router is a ternary search tree based HTTP request router. Router
 // satisfies the standard libray http.Handler interface.
 type Router struct {
-	tree     *Tree
+	tree     *tree
 	chain    *middleware.Chain
-	handler  http.Handler
+	Handler  http.Handler
 	NotFound http.Handler
 }
 
 func NewRouter() *Router {
-	r := &Router{tree: &Tree{}}
+	r := &Router{tree: &tree{}}
 	r.tree.router = r
 
 	return r
 }
 
-func (h *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx := ctxPool.Get().(*Context)
-	ctx.Reset()
-	r = r.WithContext(context.WithValue(r.Context(), CtxKey, ctx))
-	h.handler.ServeHTTP(w, r)
-	ctxPool.Put(ctx)
+func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	rt.Handler.ServeHTTP(w, r)
 }
 
-func (h *Router) Use(handlers []middleware.Chainable) {
-	h.chain = middleware.NewChain(handlers...)
-	h.handler = h.chain.Link(h.tree)
+func (rt *Router) Use(handlers []middleware.Chainable) {
+	rt.chain = middleware.NewChain(handlers...)
+	rt.Handler = rt.chain.Link(rt)
 }
 
-func (h *Router) handle(method method, path string, handler http.Handler) error {
-	if h.tree == nil {
-		h.tree = &Tree{router: h}
+func (rt *Router) handle(method method, path string, handler http.Handler) error {
+	if rt.tree == nil {
+		rt.tree = &tree{router: rt}
 	}
 
-	if h.handler == nil {
-		h.handler = h.tree
+	if rt.Handler == nil {
+		rt.Handler = rt.tree
 	}
 
-	if h.NotFound == nil {
-		h.NotFound = http.HandlerFunc(http.NotFound)
+	if rt.NotFound == nil {
+		rt.NotFound = http.HandlerFunc(http.NotFound)
 	}
 
 	pat := NewPattern(method, path, handler)
-	h.tree.root = h.tree.handle(h.tree.root, pat, 0)
+	rt.tree.root = rt.tree.handle(rt.tree.root, pat, 0)
 
 	return nil
 }
 
-func (h *Router) Get(path string, handler http.Handler) error {
-	return h.handle(GET, path, handler)
+func (rt *Router) Get(path string, handler http.Handler) error {
+	return rt.handle(GET, path, handler)
 }
 
-func (h *Router) Post(path string, handler http.Handler) error {
-	return h.handle(POST, path, handler)
+func (rt *Router) Post(path string, handler http.Handler) error {
+	return rt.handle(POST, path, handler)
 }
 
-func (h *Router) Put(path string, handler http.Handler) error {
-	return h.handle(PUT, path, handler)
+func (rt *Router) Put(path string, handler http.Handler) error {
+	return rt.handle(PUT, path, handler)
 }
 
-func (h *Router) Patch(path string, handler http.Handler) error {
-	return h.handle(PATCH, path, handler)
+func (rt *Router) Patch(path string, handler http.Handler) error {
+	return rt.handle(PATCH, path, handler)
 }
 
-func (h *Router) Delete(path string, handler http.Handler) error {
-	return h.handle(DELETE, path, handler)
+func (rt *Router) Delete(path string, handler http.Handler) error {
+	return rt.handle(DELETE, path, handler)
 }
 
-func (h *Router) match(method method, path string, ctx *Context) http.Handler {
-	return h.tree.Match(method, path, ctx)
+func (rt *Router) match(method method, path string, ctx *Context) http.Handler {
+	return rt.tree.match(method, path, ctx)
 }
 
 // TODO make these setters noop on error and return last error
-func (h *Router) All(path string, handler http.Handler) error {
-	h.handle(GET, path, handler)
-	h.handle(POST, path, handler)
-	h.handle(PUT, path, handler)
-	h.handle(PATCH, path, handler)
-	h.handle(DELETE, path, handler)
+func (rt *Router) All(path string, handler http.Handler) error {
+	rt.handle(GET, path, handler)
+	rt.handle(POST, path, handler)
+	rt.handle(PUT, path, handler)
+	rt.handle(PATCH, path, handler)
+	rt.handle(DELETE, path, handler)
 	return nil
 }
 
