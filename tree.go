@@ -1,29 +1,24 @@
 package liberty
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"strings"
-
-	"github.com/pkg/errors"
 )
 
-// tree is a ternary search trie used to map URL paths as application or public
-// API routes (with or without parameters).
+// an imlementation of a ternary search tree for web/api URL routing
 type tree struct {
 	root   *node
 	router *Router
 }
 
 type node struct {
-	v          byte
-	lt         *node
-	eq         *node
-	gt         *node
-	varPattern *pattern
-	handlers   mHandlers
-	varName    string
+	v        byte
+	lt       *node
+	eq       *node
+	gt       *node
+	handlers mHandlers
+	varName  string
 }
 
 func (n *node) String() string {
@@ -33,22 +28,6 @@ func (n *node) String() string {
 		n.varName,
 		n.handlers,
 	)
-}
-
-func (t *tree) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx := ctxPool.Get().(*Context)
-	ctx.Reset()
-	r = r.WithContext(context.WithValue(r.Context(), CtxKey, ctx))
-
-	method, ok := methods[r.Method]
-	if !ok {
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
-	t.match(method, r.URL.Path, ctx).ServeHTTP(w, r)
-
-	ctxPool.Put(ctx)
 }
 
 func (t *tree) handle(nd *node, pattern *pattern, index int) *node {
@@ -61,7 +40,6 @@ func (t *tree) handle(nd *node, pattern *pattern, index int) *node {
 	varName, ok := pattern.varNameAt(index)
 	if ok {
 		nd.varName = varName
-		nd.varPattern = pattern
 	}
 
 	if v < nd.v {
@@ -148,9 +126,6 @@ func (t *tree) match(method method, path string, ctx *Context) http.Handler {
 
 	return t.router.NotFound
 }
-
-var ErrMethodNotAllowed = errors.New("Method verb for this routing pattern is not registered.")
-var ErrNoRoute = errors.New("This route cannot be matched.")
 
 /*
 func (t *node) longestPrefix(mthd method, key string, ctx *Context) (http.Handler, error) {

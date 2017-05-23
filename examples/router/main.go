@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 
@@ -16,11 +15,10 @@ func httpHandlerFunc(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	r := router.NewRouter()
-	r.Use(nil)
 	r.Get("/", http.HandlerFunc(httpHandlerFunc))
 
 	go func() {
-		fmt.Println(http.ListenAndServe(":7777", r))
+		log.Fatal(http.ListenAndServe(":8181", r))
 	}()
-	log.Println(http.ListenAndServe("localhost:6060", nil))
+	log.Fatal(http.ListenAndServe(":8282", nil))
 }
