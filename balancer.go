@@ -12,21 +12,21 @@ import (
 
 type Config struct {
 	Certs     []*Crt                     `yaml:"certs"`
-	Proxies   []*Proxy                   `yaml:"proxies"`
+	Proxies   []*ReverseProxy            `yaml:"proxies"`
 	Whitelist []*middleware.ApiWhitelist `yaml:"whitelist"`
 }
 
-// Balancer is a balanced reverse HTTP proxy
-type Balancer struct {
+// Proxy is a balanced reverse HTTP proxy
+type Proxy struct {
 	config   *Config
 	group    *ServerGroup
 	secure   map[string]*VHost
 	insecure map[string]*VHost
 }
 
-// NewBalancer returns a Balancer configured for use
-func NewBalancer(config *Config) *Balancer {
-	b := &Balancer{
+// NewProxy returns a Balancer configured for use
+func NewProxy(config *Config) *Proxy {
+	b := &Proxy{
 		config:   config,
 		secure:   map[string]*VHost{},
 		insecure: map[string]*VHost{},
@@ -67,7 +67,7 @@ func NewBalancer(config *Config) *Balancer {
 	return b
 }
 
-func (b *Balancer) vhostDomains() []string {
+func (b *Proxy) vhostDomains() []string {
 	domains := make([]string, 0)
 	for host, _ := range b.secure {
 		domains = append(domains, host)
@@ -76,16 +76,16 @@ func (b *Balancer) vhostDomains() []string {
 	return domains
 }
 
-// Balance incoming requests between a set of configured reverse proxies, uses
+// Serve incoming requests between a set of configured reverse proxies, uses
 // kernel SO_REUSEPORT which conveniently maps incoming connections to the least
 // used socket
-func (b *Balancer) Balance() error {
+func (b *Proxy) Serve() error {
 	gracenet.Flags = gracenet.FlagReusePort
 
 	return gracehttp.Serve(b.group.HTTPServers()...)
 }
 
-func (b *Balancer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (b *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if vhost, ok := b.secure[r.Host]; ok {
 		fmt.Println(vhost, r.URL.Path)
 		vhost.handler.ServeHTTP(w, r)
@@ -95,7 +95,7 @@ func (b *Balancer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
-func (b *Balancer) serveInsecure(w http.ResponseWriter, r *http.Request) {
+func (b *Proxy) serveInsecure(w http.ResponseWriter, r *http.Request) {
 	if s, ok := b.insecure[r.Host]; ok {
 		s.handler.ServeHTTP(w, r)
 		return

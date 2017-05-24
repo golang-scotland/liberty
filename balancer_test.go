@@ -40,7 +40,7 @@ func TestReusePort(t *testing.T) {
 	}
 
 	conf := &Config{
-		Proxies: []*Proxy{
+		Proxies: []*ReverseProxy{
 			{
 				HostPath:    "127.0.0.1:8989/",
 				RemoteHost:  "127.0.0.1:3456",
@@ -51,11 +51,11 @@ func TestReusePort(t *testing.T) {
 		},
 	}
 
-	balancer := NewBalancer(conf)
+	balancer := NewProxy(conf)
 
 	var balanceErr error
 	go func() {
-		balanceErr = balancer.Balance()
+		balanceErr = balancer.Serve()
 		if balanceErr != nil {
 			fmt.Sprintf("balancer server error: %s", balanceErr)
 			t.Fatalf("balancer server error: %s", balanceErr)

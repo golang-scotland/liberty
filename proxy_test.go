@@ -6,7 +6,7 @@ import (
 )
 
 func TestNormaliseProxy(t *testing.T) {
-	proxy := &Proxy{
+	proxy := &ReverseProxy{
 		Tls: false,
 	}
 	proxy.normalise()
@@ -17,7 +17,7 @@ func TestNormaliseProxy(t *testing.T) {
 		t.Errorf("proxy not normalised - unexpected host IP '%s'. %#v", proxy.HostIP, proxy)
 	}
 
-	proxy = &Proxy{
+	proxy = &ReverseProxy{
 		Tls: true,
 	}
 	proxy.normalise()
@@ -25,7 +25,7 @@ func TestNormaliseProxy(t *testing.T) {
 		t.Errorf("proxy not normalised - host port is '%d', expected '443'. %#v", proxy.HostPort, proxy)
 	}
 
-	proxy = &Proxy{
+	proxy = &ReverseProxy{
 		Tls:        true,
 		RemoteHost: "example.com",
 	}
@@ -34,7 +34,7 @@ func TestNormaliseProxy(t *testing.T) {
 		t.Errorf("proxy not normalised - unepxected remote scheme %s%, %#v", proxy.RemoteHost, proxy)
 	}
 
-	proxy = &Proxy{
+	proxy = &ReverseProxy{
 		Tls:        false,
 		RemoteHost: "example.com",
 	}

@@ -13,8 +13,8 @@ import (
 	"github.com/gnanderson/trie"
 )
 
-// Proxy defines the configuration of a reverse proxy entry in the router.
-type Proxy struct {
+// ReverseProxy defines the configuration of a reverse proxy entry in the router.
+type ReverseProxy struct {
 	HostPath      string `yaml:"hostPath"`
 	RemoteHost    string `yaml:"remoteHost"`
 	remoteHostURL *url.URL
@@ -30,7 +30,7 @@ type Proxy struct {
 	Servers       []*http.Server
 }
 
-func (p *Proxy) hostAndPath() (host string, path string) {
+func (p *ReverseProxy) hostAndPath() (host string, path string) {
 	chunks := strings.SplitN(p.HostPath, "/", 2)
 
 	return chunks[0], "/" + chunks[1]
@@ -39,7 +39,7 @@ func (p *Proxy) hostAndPath() (host string, path string) {
 // Configure a proxy for use with the paramaters from the parsed yaml config. If
 // a remote host resolves to more than one IP address, we'll create a server and
 // for each. This works because under the hood we're using SO_REUSEPORT.
-func (p *Proxy) Configure(whitelist []*middleware.ApiWhitelist, router http.Handler, f http.HandlerFunc) error {
+func (p *ReverseProxy) Configure(whitelist []*middleware.ApiWhitelist, router http.Handler, f http.HandlerFunc) error {
 	p.normalise()
 	if err := p.parseRemoteHost(); err != nil {
 		return err
@@ -51,7 +51,7 @@ func (p *Proxy) Configure(whitelist []*middleware.ApiWhitelist, router http.Hand
 }
 
 // set port and scheme defaults
-func (p *Proxy) normalise() {
+func (p *ReverseProxy) normalise() {
 	p.HostPort = 443
 
 	if !strings.HasPrefix(p.RemoteHost, "http") {
@@ -69,7 +69,7 @@ func (p *Proxy) normalise() {
 	}
 }
 
-func (p *Proxy) parseRemoteHost() error {
+func (p *ReverseProxy) parseRemoteHost() error {
 
 	// TODO skip this proxy if error here?
 	remote, err := url.Parse(p.RemoteHost)
@@ -124,7 +124,7 @@ func (p *Proxy) parseRemoteHost() error {
 	return nil
 }
 
-func (p *Proxy) initServers(whitelist []*middleware.ApiWhitelist, router http.Handler, f http.HandlerFunc) error {
+func (p *ReverseProxy) initServers(whitelist []*middleware.ApiWhitelist, router http.Handler, f http.HandlerFunc) error {
 	s := &http.Server{
 		Addr: fmt.Sprintf("%s:80", p.HostIP),
 	}
@@ -163,7 +163,7 @@ func (p *Proxy) initServers(whitelist []*middleware.ApiWhitelist, router http.Ha
 
 // build a chain of handlers, with the last one actually performing the reverse
 // proxy to the remote resource.
-func reverseProxy(p *Proxy, handler http.Handler, remoteUrl string, whitelist []*middleware.ApiWhitelist) error {
+func reverseProxy(p *ReverseProxy, handler http.Handler, remoteUrl string, whitelist []*middleware.ApiWhitelist) error {
 
 	// if this remote host is not a valid resource we can't continue
 	remote, err := url.Parse(remoteUrl)

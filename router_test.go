@@ -107,23 +107,17 @@ func TestGithub(t *testing.T) {
 		ctx := ctxPool.Get().(*Context)
 		ctx.Reset()
 
-		var testErr = func(err error) {
-			if err != nil {
-				panic(err)
-			}
-		}
-
 		switch route.method {
 		case "GET":
-			testErr(r.Get(route.path, h))
+			r.Get(route.path, h)
 		case "POST":
-			testErr(r.Post(route.path, h))
+			r.Post(route.path, h)
 		case "PUT":
-			testErr(r.Put(route.path, h))
+			r.Put(route.path, h)
 		case "PATCH":
-			testErr(r.Patch(route.path, h))
+			r.Patch(route.path, h)
 		case "DELETE":
-			testErr(r.Delete(route.path, h))
+			r.Delete(route.path, h)
 		default:
 			panic("Unknown HTTP method: " + route.method)
 		}
@@ -136,7 +130,7 @@ func TestGithub(t *testing.T) {
 		ctx.Reset()
 
 		method, _ := methods[route.method]
-		match := r.match(method, route.path, ctx)
+		match := r.tree.match(method, route.path, ctx)
 		if match == nil {
 			t.Errorf("path tested: %s", route.path)
 		}
@@ -153,10 +147,8 @@ func TestRouteMatch(t *testing.T) {
 		ctx := ctxPool.Get().(*Context)
 		ctx.Reset()
 
-		if err := router.Get(testroute.pattern, mux); err != nil {
-			t.Error(err)
-		}
-		match := router.match(GET, testroute.path, ctx)
+		router.Get(testroute.pattern, mux)
+		match := router.tree.match(GET, testroute.path, ctx)
 		if match == nil {
 			t.Errorf("bad search: %s")
 			t.Errorf("pattern registered: %s", testroute.pattern)
@@ -177,17 +169,6 @@ func TestRouteMatch(t *testing.T) {
 	}
 }
 
-func TestBuiltTreeMatch(t *testing.T) {
-	router := newRouter()
-	for _, testroute := range testRoutes {
-		mux := http.NewServeMux()
-
-		if err := router.Get(testroute.pattern, mux); err != nil {
-			t.Error(err)
-		}
-	}
-}
-
 func valuesForBenchmark(numValues int, cb func(string)) {
 	rand.Seed(42)
 	for i := 0; i < numValues; i++ {
@@ -203,7 +184,7 @@ func valuesForBenchmark(numValues int, cb func(string)) {
 	}
 }
 
-func loadGithubApi(cb func(string) error) {
+func loadGithubApi(cb func(string)) {
 	for _, route := range githubAPI {
 		cb(string(route.path))
 	}
@@ -212,8 +193,8 @@ func loadGithubApi(cb func(string) error) {
 func BenchmarkTreeGet1000(b *testing.B) {
 	router := newRouter()
 	sg := newServerGroup()
-	loadGithubApi(func(key string) error {
-		return router.Get(key, sg)
+	loadGithubApi(func(key string) {
+		router.Get(key, sg)
 	})
 
 	w, req := httpWriterRequest("/user/repos")
@@ -229,11 +210,10 @@ func BenchmarkTreeGet1000(b *testing.B) {
 func BenchmarkChiGet1000(b *testing.B) {
 	router := chi.NewRouter()
 	sg := newServerGroup()
-	loadGithubApi(func(key string) error {
+	loadGithubApi(func(key string) {
 		router.Get(key, func(w http.ResponseWriter, r *http.Request) {
 			sg.ServeHTTP(w, r)
 		})
-		return nil
 	})
 
 	w, req := httpWriterRequest("/user/repos")
@@ -250,8 +230,8 @@ func BenchmarkTreeGetVar1000(b *testing.B) {
 	router := newRouter()
 	sg := newServerGroup()
 
-	loadGithubApi(func(key string) error {
-		return router.Get(key, sg)
+	loadGithubApi(func(key string) {
+		router.Get(key, sg)
 	})
 
 	w, req := httpWriterRequest("/user/subscriptions/graham/liberty")

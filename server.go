@@ -62,7 +62,7 @@ type ServerGroup struct {
 
 // NewServerGroup creates a server group from a balancer and a slice of standard
 // library http servers
-func NewServerGroup(balancer *Balancer, servers []*http.Server) *ServerGroup {
+func NewServerGroup(balancer *Proxy, servers []*http.Server) *ServerGroup {
 	sg := &ServerGroup{
 		w:       &sync.Mutex{},
 		servers: []*server{},
