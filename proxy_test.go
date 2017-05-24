@@ -1,45 +1,109 @@
 package liberty
 
 import (
-	"strings"
+	"fmt"
+	"io/ioutil"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"testing"
+	"time"
 )
 
-func TestNormaliseProxy(t *testing.T) {
-	proxy := &ReverseProxy{
-		Tls: false,
+func newProxy(addr string) *httputil.ReverseProxy {
+	remote, err := url.Parse(addr)
+	if err != nil {
+		panic(err)
 	}
-	proxy.normalise()
-	if proxy.HostPort != 80 {
-		t.Errorf("proxy not normalised - host port is '%d', expected '80'. %#v", proxy.HostPort, proxy)
-	}
-	if proxy.HostIP != "0.0.0.0" {
-		t.Errorf("proxy not normalised - unexpected host IP '%s'. %#v", proxy.HostIP, proxy)
+	return httputil.NewSingleHostReverseProxy(remote)
+}
+
+func TestReusePort(t *testing.T) {
+
+	numServers := 3
+	addrs := make([]*net.TCPAddr, numServers)
+	for i := 1; i <= numServers; i++ {
+		v := i
+		server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprint(w, v)
+		}))
+		server.Start()
+		fmt.Printf("S%d URL: %s\n", i, server.URL)
+		defer server.Close()
+
+		url, _ := url.Parse(server.URL)
+
+		addr, _ := net.ResolveTCPAddr("tcp", url.Host)
+		addrs[i-1] = addr
 	}
 
-	proxy = &ReverseProxy{
-		Tls: true,
-	}
-	proxy.normalise()
-	if proxy.HostPort != 443 {
-		t.Errorf("proxy not normalised - host port is '%d', expected '443'. %#v", proxy.HostPort, proxy)
-	}
-
-	proxy = &ReverseProxy{
-		Tls:        true,
-		RemoteHost: "example.com",
-	}
-	proxy.normalise()
-	if !strings.HasPrefix(proxy.RemoteHost, "https://") {
-		t.Errorf("proxy not normalised - unepxected remote scheme %s%, %#v", proxy.RemoteHost, proxy)
+	conf := &Config{
+		Proxies: []*ReverseProxy{
+			{
+				HostPath:    "127.0.0.1:8989/",
+				RemoteHost:  "127.0.0.1:3456",
+				HostIP:      "127.0.0.1",
+				HostPort:    8989,
+				remoteAddrs: addrs,
+			},
+		},
 	}
 
-	proxy = &ReverseProxy{
-		Tls:        false,
-		RemoteHost: "example.com",
+	balancer := NewProxy(conf)
+
+	var balanceErr error
+	go func() {
+		balanceErr = balancer.Serve()
+		if balanceErr != nil {
+			fmt.Sprintf("balancer server error: %s", balanceErr)
+			t.Fatalf("balancer server error: %s", balanceErr)
+		}
+	}()
+	time.Sleep(1 * time.Second)
+
+	if balanceErr != nil {
+		t.Error(balanceErr)
+		return
 	}
-	proxy.normalise()
-	if !strings.HasPrefix(proxy.RemoteHost, "http://") {
-		t.Errorf("proxy not normalised - unepxected remote scheme %s%, %#v", proxy.RemoteHost, proxy)
+
+	tr := &http.Transport{}
+	tr.DisableKeepAlives = true
+	c := &http.Client{Transport: tr}
+
+	var one, two, three int
+
+	for i := 0; i <= 100; i++ {
+
+		go func() {
+			resp, err := c.Get("http://127.0.0.1:8989/")
+			if err != nil {
+				t.Fatalf("client get error: %s", err)
+			}
+
+			str, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				fmt.Println(err)
+				t.Fatalf(err.Error())
+			}
+			//t.Logf("%d: %s\n", i, str)
+
+			switch string(str) {
+			case "1":
+				one++
+			case "2":
+				two++
+			case "3":
+				three++
+			}
+		}()
+
+	}
+
+	time.Sleep(5 * time.Second)
+	if one == 0 || two == 0 || three == 0 {
+		t.Fatalf("one:%d, two:%d, three:%d", one, two, three)
+
 	}
 }
