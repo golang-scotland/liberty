@@ -1,13 +1,16 @@
 package liberty
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"sync"
+	"time"
 
 	"golang.scot/liberty/middleware"
-
-	"github.com/facebookgo/grace/gracehttp"
-	"github.com/facebookgo/grace/gracenet"
 )
 
 type Config struct {
@@ -16,7 +19,7 @@ type Config struct {
 	Whitelist []*middleware.ApiWhitelist `yaml:"whitelist"`
 }
 
-// Proxy is a balanced reverse HTTP proxy
+// Proxy is a reverse HTTP proxy
 type Proxy struct {
 	config   *Config
 	group    *ServerGroup
@@ -24,9 +27,9 @@ type Proxy struct {
 	insecure map[string]*VHost
 }
 
-// NewProxy returns a Balancer configured for use
+// NewProxy returns a Proxy configured for use
 func NewProxy(config *Config) *Proxy {
-	b := &Proxy{
+	p := &Proxy{
 		config:   config,
 		secure:   map[string]*VHost{},
 		insecure: map[string]*VHost{},
@@ -34,22 +37,22 @@ func NewProxy(config *Config) *Proxy {
 
 	servers := make([]*http.Server, 0)
 
-	for _, proxy := range b.config.Proxies {
+	for _, proxy := range p.config.Proxies {
 		host, _ := proxy.hostAndPath()
-		if _, ok := b.secure[host]; !ok {
-			b.secure[host] = &VHost{
+		if _, ok := p.secure[host]; !ok {
+			p.secure[host] = &VHost{
 				host:    host,
 				handler: NewRouter(),
 			}
 		}
-		if _, ok := b.insecure[host]; !ok {
-			b.insecure[host] = &VHost{
+		if _, ok := p.insecure[host]; !ok {
+			p.insecure[host] = &VHost{
 				host:    host,
 				handler: http.HandlerFunc(middleware.RedirectPerm),
 			}
 		}
 
-		err := proxy.Configure(b.config.Whitelist, b.secure[host].handler, b.serveInsecure)
+		err := proxy.Configure(p.config.Whitelist, p.secure[host].handler, p.serveInsecure)
 		if err != nil {
 			fmt.Printf("the proxy for '%s' was not configured - %s\n", proxy.HostPath, err)
 			continue
@@ -58,13 +61,10 @@ func NewProxy(config *Config) *Proxy {
 		servers = append(servers, proxy.Servers...)
 	}
 
-	b.group = NewServerGroup(b, servers)
+	p.group = NewServerGroup(p, servers)
+	p.group.setTLSConfig(p.vhostDomains())
 
-	for _, s := range b.group.HTTPServers() {
-		setTLSConfig(s, b.vhostDomains())
-	}
-
-	return b
+	return p
 }
 
 func (b *Proxy) vhostDomains() []string {
@@ -76,13 +76,39 @@ func (b *Proxy) vhostDomains() []string {
 	return domains
 }
 
+const gracePriod = 5 // seconds
+
 // Serve incoming requests between a set of configured reverse proxies, uses
 // kernel SO_REUSEPORT which conveniently maps incoming connections to the least
 // used socket
-func (b *Proxy) Serve() error {
-	gracenet.Flags = gracenet.FlagReusePort
+func (b *Proxy) Serve() {
+	sig := make(chan os.Signal)
 
-	return gracehttp.Serve(b.group.HTTPServers()...)
+	startServer := func(s *server, wg *sync.WaitGroup) {
+		fmt.Println("server lisening: ", s.s.Addr)
+		log.Println(s.s.Serve(s.Listener()))
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(len(b.group.servers))
+
+	for _, s := range b.group.servers {
+		go startServer(s, &wg)
+	}
+
+	signal.Notify(sig, os.Interrupt, os.Kill)
+	<-sig
+	log.Println("Draining server connections...")
+	for _, s := range b.group.servers {
+		go func() {
+			ctx, _ := context.WithTimeout(context.Background(), gracePriod*time.Second)
+			s.s.Shutdown(ctx)
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
+	log.Println("Done, exiting")
 }
 
 func (b *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {

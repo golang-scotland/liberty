@@ -122,10 +122,7 @@ func (sg *ServerGroup) Swap(i, j int) {
 	sg.servers[i], sg.servers[j] = sg.servers[j], sg.servers[i]
 }
 
-func setTLSConfig(s *http.Server, domains []string) {
-	if strings.HasSuffix(s.Addr, ":80") {
-		return
-	}
+func (sg *ServerGroup) setTLSConfig(domains []string) {
 
 	// Once up on a when we used to use SSL, not anymore.
 	// TODO is this not the default TLS config for go now?
@@ -134,11 +131,6 @@ func setTLSConfig(s *http.Server, domains []string) {
 	// *we* will choose...
 	// TODO do we still care about client negotiation / downgrades?
 	config.PreferServerCipherSuites = true
-
-	// because someone else might have an opinion too
-	if s.TLSConfig != nil {
-		*config = *s.TLSConfig
-	}
 
 	// Lets Encrypt!
 	m := &autocert.Manager{
@@ -150,7 +142,12 @@ func setTLSConfig(s *http.Server, domains []string) {
 	}
 	config.GetCertificate = m.GetCertificate
 
-	s.TLSConfig = config
+	for _, s := range sg.servers {
+		if strings.HasSuffix(s.s.Addr, ":80") {
+			continue
+		}
+		s.s.TLSConfig = config
+	}
 }
 
 func newAcmeClient() *acme.Client {
