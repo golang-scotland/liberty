@@ -72,6 +72,8 @@ func (t *tree) match(method method, path string, ctx *Context) http.Handler {
 		default:
 			n = n.eq
 			i++
+		case n == nil || n.v == 0x0:
+			return t.router.NotFound
 		case c == '/' && n.eq != nil && (n.eq.v == ':' || n.eq.v == '*'):
 			match = i + 1
 			for match < l && path[match] != '/' {
@@ -113,8 +115,6 @@ func (t *tree) match(method method, path string, ctx *Context) http.Handler {
 			}
 
 			continue
-		case n == nil || n.v == 0x0:
-			return t.router.NotFound
 		case c < n.v:
 			n = n.lt
 		case c > n.v:
