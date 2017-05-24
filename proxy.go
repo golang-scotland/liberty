@@ -82,7 +82,6 @@ const gracePriod = 5 // seconds
 // kernel SO_REUSEPORT which conveniently maps incoming connections to the least
 // used socket
 func (b *Proxy) Serve() {
-	sig := make(chan os.Signal)
 
 	startServer := func(s *server, wg *sync.WaitGroup) {
 		fmt.Println("server lisening: ", s.s.Addr)
@@ -96,8 +95,10 @@ func (b *Proxy) Serve() {
 		go startServer(s, &wg)
 	}
 
+	sig := make(chan os.Signal)
 	signal.Notify(sig, os.Interrupt, os.Kill)
 	<-sig
+
 	log.Println("Draining server connections...")
 	for _, s := range b.group.servers {
 		go func() {
