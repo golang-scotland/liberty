@@ -55,11 +55,7 @@ func TestReusePort(t *testing.T) {
 
 	var balanceErr error
 	go func() {
-		balanceErr = balancer.Serve()
-		if balanceErr != nil {
-			fmt.Sprintf("balancer server error: %s", balanceErr)
-			t.Fatalf("balancer server error: %s", balanceErr)
-		}
+		balancer.Serve()
 	}()
 	time.Sleep(1 * time.Second)
 

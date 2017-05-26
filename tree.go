@@ -61,20 +61,20 @@ func (t *tree) handle(nd *node, pattern *pattern, index int) *node {
 func (t *tree) match(method method, path string, ctx *Context) http.Handler {
 	var i int
 	var match int
-	var c byte
+	var char byte
 
 	n := t.root
 	l := len(path)
 
 	for i < l {
-		c = path[i]
+		char = path[i]
 		switch {
 		default:
 			n = n.eq
 			i++
 		case n == nil || n.v == 0x0:
 			return t.router.NotFound
-		case c == '/' && n.eq != nil && (n.eq.v == ':' || n.eq.v == '*'):
+		case char == '/' && n.eq != nil && (n.eq.v == ':' || n.eq.v == '*'):
 			match = i + 1
 			for match < l && path[match] != '/' {
 				match++
@@ -90,7 +90,7 @@ func (t *tree) match(method method, path string, ctx *Context) http.Handler {
 			var si int
 
 			searchPath := string(n.v) + n.varName
-			if !lastNode { //  && n.v != '*' { // TODO ??? tests ???
+			if !lastNode { //  && n.v != '*' { //  TODO WTF graham ??? tests ???
 				searchPath = searchPath + "/"
 			}
 			sl := len(searchPath)
@@ -115,9 +115,9 @@ func (t *tree) match(method method, path string, ctx *Context) http.Handler {
 			}
 
 			continue
-		case c < n.v:
+		case char < n.v:
 			n = n.lt
-		case c > n.v:
+		case char > n.v:
 			n = n.gt
 		case i == l-1:
 			return n.handlers[method]
@@ -127,20 +127,18 @@ func (t *tree) match(method method, path string, ctx *Context) http.Handler {
 	return t.router.NotFound
 }
 
-/*
-func (t *node) longestPrefix(mthd method, key string, ctx *Context) (http.Handler, error) {
+func (t *tree) longestPrefix(mthd method, key string, ctx *Context) http.Handler {
 	if len(key) < 1 {
-		return nil, ErrNoRoute
+		return http.HandlerFunc(http.NotFound)
 	}
 
-	length := prefix(t, key, 0)
+	length := prefix(t.root, key, 0)
 
 	return t.match(mthd, key[0:length], ctx)
 }
-*/
 
-func prefix(t *node, key string, index int) int {
-	if index == len(key) || t == nil {
+func prefix(n *node, key string, index int) int {
+	if index == len(key) || n == nil {
 		return 0
 	}
 
@@ -148,15 +146,15 @@ func prefix(t *node, key string, index int) int {
 	recLen := 0
 	v := key[index]
 
-	if v < t.v {
-		recLen = prefix(t.lt, key, index)
-	} else if v > t.v {
-		recLen = prefix(t.gt, key, index)
+	if v < n.v {
+		recLen = prefix(n.lt, key, index)
+	} else if v > n.v {
+		recLen = prefix(n.gt, key, index)
 	} else {
-		if t.v != 0x0 {
+		if n.v != 0x0 {
 			length = index + 1
 		}
-		recLen = prefix(t.eq, key, index+1)
+		recLen = prefix(n.eq, key, index+1)
 	}
 	if length > recLen {
 		return length
