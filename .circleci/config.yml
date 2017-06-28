@@ -1,4 +1,7 @@
 version: 2
+dependencies:
+  pre:
+    - go get -u github.com/golang/dep/cmd/dep
 jobs:
   build:
     docker:
@@ -9,5 +12,6 @@ jobs:
 
     steps:
       - checkout
-      - run: go get .
+      - run: dep ensure
+      - run: go vet ./...
       - run: go test .
