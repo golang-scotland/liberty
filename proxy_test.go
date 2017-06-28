@@ -1,15 +1,8 @@
 package liberty
 
 import (
-	"fmt"
-	"io/ioutil"
-	"net"
-	"net/http"
-	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
-	"testing"
-	"time"
 )
 
 func newProxy(addr string) *httputil.ReverseProxy {
@@ -20,6 +13,7 @@ func newProxy(addr string) *httputil.ReverseProxy {
 	return httputil.NewSingleHostReverseProxy(remote)
 }
 
+/*
 func TestReusePort(t *testing.T) {
 
 	numServers := 3
@@ -103,3 +97,4 @@ func TestReusePort(t *testing.T) {
 
 	}
 }
+*/

@@ -39,6 +39,7 @@ var testRoutes = []struct {
 	path        string
 	testMatches map[string]string
 }{
+	{GET, "", "/", nil},
 	{GET, "/", "/", nil},
 	{GET, "www.example.com/", "www.example.com/", nil},
 	{GET, "www.example.com/foo", "www.example.com/foo", nil},
@@ -65,6 +66,9 @@ var testRoutes = []struct {
 	{GET, "/test/example/:var1/path/:var2", "/test/example/foobar/path/barbaz", map[string]string{
 		"var1": "foobar",
 		"var2": "barbaz",
+	}},
+	{GET, "/test/:var1", "/test/", map[string]string{
+		"var1": "",
 	}},
 }
 

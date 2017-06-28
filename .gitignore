@@ -29,3 +29,4 @@ _testmain.go
 liberty/liberty
 .DS_Store
 vendor/*
+liberty-fuzz.zip

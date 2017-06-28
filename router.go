@@ -77,6 +77,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	method, ok := methods[r.Method]
 	if !ok {
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		ctxPool.Put(ctx)
 		return
 	}
 
@@ -134,6 +135,9 @@ func (rt *Router) All(path string, handler http.Handler) {
 }
 
 func (rt *Router) handle(method method, path string, handler http.Handler) {
+	if path == "" {
+		path = "/"
+	}
 	if rt.tree == nil {
 		rt.tree = &tree{router: rt}
 	}

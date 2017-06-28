@@ -1,9 +1,28 @@
 package liberty
 
-import "sync"
+import (
+	"context"
+	"net/http"
+	"sync"
+)
 
 type Context struct {
 	Params Params
+}
+
+func (c *Context) Reset() {
+	c.Params = c.Params[:0]
+}
+
+func routingContext(ctx context.Context) *Context {
+	return ctx.Value(CtxKey).(*Context)
+}
+
+func RouteParam(r *http.Request, key string) string {
+	if ctx := routingContext(r.Context()); ctx != nil {
+		return ctx.Params.Get(key)
+	}
+	return ""
 }
 
 type Params []Param
@@ -25,10 +44,6 @@ func (ps Params) Get(name string) string {
 	}
 
 	return ""
-}
-
-func (c *Context) Reset() {
-	c.Params = c.Params[:0]
 }
 
 var ctxPool = sync.Pool{
