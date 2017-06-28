@@ -25,9 +25,7 @@ const (
 type GzipHandler struct{}
 
 func (hl *GzipHandler) Chain(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gziphandler.GzipHandler(h)
-	})
+	return gziphandler.GzipHandler(h)
 }
 
 // IPRestrictedHandler does what it says on the tin - names not down, not getting
