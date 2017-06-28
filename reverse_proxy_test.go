@@ -18,7 +18,7 @@ func TestNormaliseProxy(t *testing.T) {
 	}
 	proxy.normalise()
 	if !strings.HasPrefix(proxy.RemoteHost, "https://") {
-		t.Errorf("proxy not normalised - unepxected remote scheme %s%, %#v", proxy.RemoteHost, proxy)
+		t.Errorf("proxy not normalised - unepxected remote scheme %s, %#v", proxy.RemoteHost, proxy)
 	}
 
 	proxy = &ReverseProxy{
@@ -27,6 +27,6 @@ func TestNormaliseProxy(t *testing.T) {
 	}
 	proxy.normalise()
 	if !strings.HasPrefix(proxy.RemoteHost, "http://") {
-		t.Errorf("proxy not normalised - unepxected remote scheme %s%, %#v", proxy.RemoteHost, proxy)
+		t.Errorf("proxy not normalised - unepxected remote scheme %s, %#v", proxy.RemoteHost, proxy)
 	}
 }

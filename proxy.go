@@ -101,11 +101,12 @@ func (b *Proxy) Serve() {
 
 	log.Println("Draining server connections...")
 	for _, s := range b.group.servers {
-		go func() {
-			ctx, _ := context.WithTimeout(context.Background(), gracePriod*time.Second)
-			s.s.Shutdown(ctx)
+		go func(srv *http.Server) {
+			ctx, cancel := context.WithTimeout(context.Background(), gracePriod*time.Second)
+			defer cancel()
+			srv.Shutdown(ctx)
 			wg.Done()
-		}()
+		}(s.s)
 	}
 
 	wg.Wait()

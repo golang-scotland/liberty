@@ -90,7 +90,6 @@ func TestSingleMatch(t *testing.T) {
 
 	match := router.tree.match(GET, path, ctx)
 	if match == nil {
-		t.Errorf("bad search: %s")
 		t.Errorf("pattern registered: %s", pattern)
 		t.Errorf("path tested: %s", path)
 	}
@@ -154,7 +153,6 @@ func TestRouteMatch(t *testing.T) {
 		router.Get(testroute.pattern, mux)
 		match := router.tree.match(GET, testroute.path, ctx)
 		if match == nil {
-			t.Errorf("bad search: %s")
 			t.Errorf("pattern registered: %s", testroute.pattern)
 			t.Errorf("path tested: %s", testroute.path)
 		}

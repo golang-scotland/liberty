@@ -113,7 +113,7 @@ func (p *ReverseProxy) parseRemoteHost() error {
 		for i, ip := range ips {
 			addr, err := net.ResolveTCPAddr("tcp", fmt.Sprintf("%s:%s", ip, remotePort))
 			if err != nil {
-				return fmt.Errorf("cannot parse address, port: '%s', port: %s, err: ", ip, remotePort, err)
+				return fmt.Errorf("cannot parse address, port: '%s', port: %s, err: %s", ip, remotePort, err)
 			}
 			addrs[i] = addr
 		}

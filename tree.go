@@ -23,7 +23,7 @@ type node struct {
 
 func (n *node) String() string {
 	return fmt.Sprintf(
-		"[value: %s, varName: %s, handlers: %#t]",
+		"[value: %s, varName: %s, handlers: %T]",
 		string(n.v),
 		n.varName,
 		n.handlers,
