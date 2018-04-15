@@ -1,10 +1,19 @@
 package liberty
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
+	"log"
 	"net"
+	"os"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/acme"
+	"golang.org/x/crypto/acme/autocert"
+	"golang.scot/liberty/env"
 
 	reuseport "github.com/kavu/go_reuseport"
 )
@@ -18,17 +27,41 @@ import (
 //
 // Unlike NewListener, it is the caller's responsibility to initialize
 // the Manager m's Prompt, Cache, HostPolicy, and other desired options.
-func (s *server) Listener() net.Listener {
-	ln := &listener{
-		s: s,
+func (s *server) Listener(domains []string) net.Listener {
+	// Lets Encrypt!
+	m := &autocert.Manager{
+		Client:     newAcmeClient(),
+		Cache:      autocert.DirCache(os.Getenv("ACME_CACHE")),
+		Email:      os.Getenv("ACME_EMAIL"),
+		Prompt:     autocert.AcceptTOS,
+		HostPolicy: autocert.HostWhitelist(domains...),
 	}
 
-	ln.tcpListener, ln.tcpListenErr = reuseport.NewReusablePortListener("tcp", s.s.Addr)
+	h := m.HTTPHandler(nil)
+	if strings.HasSuffix(s.s.Addr, ":80") {
+		s.handler = h
+		s.s.Handler = h
+	}
+
+	config := &tls.Config{
+		MinVersion:               tls.VersionTLS12,
+		PreferServerCipherSuites: true,
+		NextProtos:               []string{"h2", "http/1.1"},
+		GetCertificate:           m.GetCertificate,
+	}
+
+	ln := &listener{
+		s:      s,
+		config: config,
+	}
+
+	ln.tcpListener, ln.tcpListenErr = reuseport.NewReusablePortListener("tcp4", s.s.Addr)
 	return ln
 }
 
 type listener struct {
 	s            *server
+	config       *tls.Config
 	tcpListener  net.Listener
 	tcpListenErr error
 }
@@ -56,7 +89,7 @@ func (ln *listener) Accept() (net.Conn, error) {
 	var finalConn net.Conn
 	finalConn = tcpConn
 	if strings.HasSuffix(ln.s.s.Addr, ":443") {
-		finalConn = tls.Server(tcpConn, ln.s.s.TLSConfig)
+		finalConn = tls.Server(tcpConn, ln.config)
 	}
 	return finalConn, nil
 }
@@ -75,4 +108,18 @@ func (ln *listener) Close() error {
 		return ln.tcpListenErr
 	}
 	return ln.tcpListener.Close()
+}
+
+func newAcmeClient() *acme.Client {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		log.Fatal(err)
+	}
+	client := &acme.Client{Key: key}
+
+	if env.Get() != env.Prod {
+		client.DirectoryURL = letsEncryptSandboxUrl
+	}
+
+	return client
 }

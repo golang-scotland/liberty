@@ -14,9 +14,9 @@ type Transport struct {
 
 // RoundTrip sets some standard headers
 func (t *Transport) RoundTrip(r *http.Request) (*http.Response, error) {
-	if t.tls {
-		r.Header.Set("X-Forwarded-Proto", "https")
-	}
+	// we're not really serving anything over port 80, so when we proxy always
+	// send https as the scheme in the forwarded headers
+	r.Header.Set("X-Forwarded-Proto", "https")
 
 	resp, err := t.tr.RoundTrip(r)
 	if err == nil {
@@ -25,7 +25,7 @@ func (t *Transport) RoundTrip(r *http.Request) (*http.Response, error) {
 		}
 		resp.Header.Set("Server", "Liberty")
 		resp.Header.Set("X-Frame-Options", "SAMEORIGIN")
-		resp.Header.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		//resp.Header.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 	}
 	return resp, err
 }

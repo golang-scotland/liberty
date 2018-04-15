@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	cost = 12
+	cost = 8
 )
 
 func hasher(s string) []byte {

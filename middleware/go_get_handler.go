@@ -9,16 +9,15 @@ import (
 type GoGet struct {
 	Host string
 	Path string
+	Org  string
 }
 
-func GoGetHandler(h http.Handler) http.Handler {
+func (gg *GoGet) Handler(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err == nil {
 			if r.Form.Get("go-get") == "1" {
-				gg := &GoGet{
-					Host: r.Host,
-					Path: r.URL.Path,
-				}
+				gg.Host = r.Host
+				gg.Path = r.URL.Path
 				if err := ggTpl.Execute(w, gg); err != nil {
 					http.Error(w, err.Error(), 500)
 				}
@@ -37,7 +36,7 @@ func getGGTpl() *template.Template {
 <html>
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
-<meta name="go-import" content="{{ .Host }}{{ .Path }} git https://github.com/golang-scotland/{{ .Path }}">
+<meta name="go-import" content="{{ .Host }}{{ .Path }} git https://github.com/{{ .Org }}{{ .Path }}">
 <meta http-equiv="refresh" content="0; url=https://godoc.org/{{ .Host }}{{ .Path }}">
 </head>
 <body>

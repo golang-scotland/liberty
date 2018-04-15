@@ -15,11 +15,12 @@ import (
 )
 
 const (
-	ApiType      = "api"
-	WebType      = "web"
-	PromType     = "prometheus"
-	RedirectType = "redirect"
-	GoGetType    = "goget"
+	ApiType       = "api"
+	WebType       = "web"
+	PromType      = "prometheus"
+	RedirectType  = "redirect"
+	GoGetType     = "goget"
+	BasicAuthType = "basic_auth"
 )
 
 type GzipHandler struct{}
@@ -136,6 +137,7 @@ func WebsocketProxy(target string) http.Handler {
 			log.Printf("Error dialing websocket backend %s: %v", target, err)
 			return
 		}
+		fmt.Println("trying to hijack for websocket...")
 		hj, ok := w.(http.Hijacker)
 		if !ok {
 			http.Error(w, "Not a hijacker?", 500)
