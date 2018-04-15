@@ -128,24 +128,12 @@ func (p *ReverseProxy) initServers(whitelist []*middleware.ApiWhitelist, router 
 	}
 	p.Servers = append(p.Servers, s)
 
-	// now the server (or servers) for this proxy entry
 	for _, addr := range p.remoteAddrs {
 		s := &http.Server{
 			Addr: fmt.Sprintf("%s:%d", p.HostIP, p.HostPort),
 		}
 
-		// if this is a websocket proxy, we need to hijack the connection. We'll
-		// have to treat this a little differently.
-		if p.Ws {
-			mux := http.NewServeMux()
-			mux.Handle(p.HostPath, middleware.WebsocketProxy(p.RemoteHost))
-			s.Handler = mux
-			p.Servers = append(p.Servers, s)
-			continue
-		}
-
 		remoteShard := strings.Replace(p.RemoteHost, p.remoteHostURL.Host, addr.String(), 1)
-
 		err := reverseProxy(p, router, remoteShard, whitelist)
 		if err != nil {
 			return err
@@ -159,7 +147,7 @@ func (p *ReverseProxy) initServers(whitelist []*middleware.ApiWhitelist, router 
 
 // build a chain of handlers, with the last one actually performing the reverse
 // proxy to the remote resource.
-func reverseProxy(p *ReverseProxy, handler http.Handler, remoteUrl string, whitelist []*middleware.ApiWhitelist) error {
+func reverseProxy(p *ReverseProxy, handler http.Handler, remoteUrl string, whitelist []*middleware.ApiWhitelist) (err error) {
 
 	// if this remote host is not a valid resource we can't continue
 	remote, err := url.Parse(remoteUrl)
@@ -169,9 +157,6 @@ func reverseProxy(p *ReverseProxy, handler http.Handler, remoteUrl string, white
 
 	// the first handler should be a prometheus instrumented handler
 	handlers := make([]middleware.Chainable, 0)
-
-	// @DEPRECATED https://github.com/prometheus/client_golang/issues/200
-	//handlers = append(handlers, &InstrumentedHandler{Name: p.HostPath})
 
 	// next we check for restrictions based on location / IP
 	if len(p.IPs) > 0 {
@@ -198,24 +183,24 @@ func reverseProxy(p *ReverseProxy, handler http.Handler, remoteUrl string, white
 		cors: p.Cors,
 	}
 
+	// wrap the reverse proxy in a hijacker that will handle any upgrades to
+	// websocket
+	reverse := middleware.WebsocketProxy(p.RemoteHost, reverseProxy)
+
 	// now we should decided what type of resource the request is for, there's
 	// only really three basic types at the moment: web, api, metrics
 	var final http.Handler
 	switch p.HandlerType {
 	default:
-		final = reverseProxy
+		final = reverse
 	case middleware.BasicAuthType:
-		final = middleware.BasicAuthHandler(reverseProxy)
+		final = middleware.BasicAuthHandler(reverse)
 	case middleware.ApiType:
 		handlers = append(handlers, middleware.NewApiHandler(whitelist))
-		final = middleware.BasicAuthHandler(reverseProxy)
+		final = middleware.BasicAuthHandler(reverse)
 	case middleware.GoGetType:
 		gg := &middleware.GoGet{Org: p.GoGetOrg}
-		final = gg.Handler(reverseProxy)
-	/*
-		case promHandler:
-			final = prometheus.InstrumentHandler(env.Hostname(), prometheus.Handler())
-	*/
+		final = gg.Handler(reverse)
 	case middleware.RedirectType:
 		final = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, fmt.Sprintf("%s/%s", p.RemoteHost, r.URL.Path), 302)
@@ -230,15 +215,5 @@ func reverseProxy(p *ReverseProxy, handler http.Handler, remoteUrl string, white
 	router.All(path, chain)
 	router.NotFound = chain
 
-	/*
-		if len(p.HostAlias) > 0 {
-			chunks := strings.Split(p.HostPath, ".")
-			for _, alias := range p.HostAlias {
-				chunks[0] = alias
-				router.All(strings.Join(chunks, "."), chain)
-			}
-		}
-	*/
-
-	return nil
+	return err
 }

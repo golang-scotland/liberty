@@ -27,7 +27,7 @@ func NewChain(handlers ...Chainable) *Chain {
 	return ch
 }
 
-// Link the chain, note that we decrement the slize index which means the handler
+// Link the chain, note that we decrement the slice index which means the handler
 // passed in the invocation is linked with the LAST handler in the slice.
 func (ch Chain) Link(h http.Handler) http.Handler {
 	if h == nil {
