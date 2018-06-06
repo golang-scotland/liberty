@@ -6,9 +6,9 @@ workspace:
 pipeline:
   build:
     image: golang:${GO_VERSION}
-  commands:
-    - go get -u golang.org/x/vgo
-    - vgo test ./...  && vgo build .
+    commands:
+      - go get -u golang.org/x/vgo
+      - vgo test ./...  && vgo build .
 
 matrix:
   GO_VERSION:
