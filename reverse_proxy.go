@@ -32,7 +32,12 @@ type ReverseProxy struct {
 }
 
 func (p *ReverseProxy) hostAndPath() (host string, path string) {
+	fmt.Println("getting host and path for proxy: ", p.HostPath)
 	chunks := strings.SplitN(p.HostPath, "/", 2)
+	// if no path specified, use wildcard to serve all paths
+	if len(chunks) < 2 {
+		chunks = append(chunks, "*")
+	}
 
 	return chunks[0], "/" + chunks[1]
 }

@@ -147,7 +147,6 @@ func WebsocketProxy(target string, proxy http.Handler) http.Handler {
 
 			return
 		}
-		fmt.Println("Websocket!")
 
 		websocketProxy.ServeHTTP(w, r)
 	})
