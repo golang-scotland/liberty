@@ -160,7 +160,6 @@ func reverseProxy(p *ReverseProxy, handler http.Handler, remoteUrl string, white
 		return fmt.Errorf("cannot parse remote url '%s' - %s", remoteUrl, err)
 	}
 
-	// the first handler should be a prometheus instrumented handler
 	handlers := make([]middleware.Chainable, 0)
 
 	// next we check for restrictions based on location / IP
