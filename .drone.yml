@@ -6,6 +6,8 @@ workspace:
 pipeline:
   build:
     image: golang:${GO_VERSION}
+    environment:
+      - CGO_ENABLED=0
     commands:
       - go env
       - go get -u golang.org/x/vgo
