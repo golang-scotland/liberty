@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// an imlementation of a ternary search tree for web/api URL routing
+// an imlementation of a ternary search tree for web/api routing
 type tree struct {
 	root   *node
 	router *Router

@@ -130,7 +130,7 @@ func (p *Proxy) Serve() {
 
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if vhost, ok := p.secure[r.Host]; ok {
-		fmt.Println(vhost, r.URL.Path)
+		fmt.Println(vhost, r.URL.String())
 		vhost.handler.ServeHTTP(w, r)
 		return
 	}
