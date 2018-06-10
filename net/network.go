@@ -14,10 +14,17 @@ const (
 	SO_REUSEPORT = 0x0F
 )
 
+// Cert defines a domain, certificate and keyfile
+type Cert struct {
+	Domain   string
+	CertFile string
+	KeyFile  string
+}
+
 // serveSocketListener takes a pair of http servers and adds systemd based
 // socket activated listeners for ports 80 and 443
 func serveSocketListener(srv, secureSrv *http.Server) error {
-	listeners, err := activation.Listeners(true)
+	listeners, err := activation.Listeners()
 	if err != nil {
 		panic(err)
 	}
@@ -34,12 +41,12 @@ func serveSocketListener(srv, secureSrv *http.Server) error {
 	}()
 
 	lnSecure := listeners[1]
-	return serveSecureSocketListener(secureSrv, lnSecure)
+	return serveSecureSocketListener(secureSrv, lnSecure, nil)
 }
 
 // load the certificate and key pair in pem format and create a new TLS listener
 // from a net.Listener
-func serveSecureSocketListener(srv *http.Server, ln net.Listener) error {
+func serveSecureSocketListener(srv *http.Server, ln net.Listener, certs ...*Cert) error {
 	addr := srv.Addr
 	if addr == "" {
 		addr = ":https"
@@ -53,13 +60,15 @@ func serveSecureSocketListener(srv *http.Server, ln net.Listener) error {
 	}
 
 	var err error
-	config.Certificates = make([]tls.Certificate, len(conf.Certs))
-	for i := 0; i < len(conf.Certs); i++ {
-		config.Certificates[i], err = tls.LoadX509KeyPair(
-			conf.Certs[i].CertFile, conf.Certs[i].KeyFile,
-		)
-		if err != nil {
-			return err
+	if certs != nil {
+		config.Certificates = make([]tls.Certificate, len(certs))
+		for i := 0; i < len(certs); i++ {
+			config.Certificates[i], err = tls.LoadX509KeyPair(
+				certs[i].CertFile, certs[i].KeyFile,
+			)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
