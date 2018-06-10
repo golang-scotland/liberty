@@ -13,6 +13,7 @@ import (
 	"golang.scot/liberty/middleware"
 )
 
+// Config is a top level config struct
 type Config struct {
 	Certs     []*Crt                     `yaml:"certs"`
 	Proxies   []*ReverseProxy            `yaml:"proxies"`
@@ -39,12 +40,25 @@ func NewProxy(config *Config) *Proxy {
 
 	for _, proxy := range p.config.Proxies {
 		host, _ := proxy.hostAndPath()
+
 		if _, ok := p.secure[host]; !ok {
+			router := NewRouter()
+
 			p.secure[host] = &VHost{
 				host:    host,
-				handler: NewRouter(),
+				handler: router,
+			}
+
+			if len(proxy.HostAlias) > 0 {
+				for _, alias := range proxy.HostAlias {
+					p.secure[alias] = &VHost{
+						host:    alias,
+						handler: router,
+					}
+				}
 			}
 		}
+
 		if _, ok := p.insecure[host]; !ok {
 			p.insecure[host] = &VHost{
 				host:    host,
@@ -52,7 +66,7 @@ func NewProxy(config *Config) *Proxy {
 			}
 		}
 
-		err := proxy.Configure(p.config.Whitelist, p.secure[host].handler, p.serveInsecure)
+		err := proxy.Configure(p.config.Whitelist, p.secure[host].handler)
 		if err != nil {
 			fmt.Printf("the proxy for '%s' was not configured - %s\n", proxy.HostPath, err)
 			continue
@@ -62,14 +76,13 @@ func NewProxy(config *Config) *Proxy {
 	}
 
 	p.group = NewServerGroup(p, servers)
-	p.group.setTLSConfig(p.vhostDomains())
 
 	return p
 }
 
-func (b *Proxy) vhostDomains() []string {
+func (p *Proxy) vhostDomains() []string {
 	domains := make([]string, 0)
-	for host, _ := range b.secure {
+	for host := range p.secure {
 		domains = append(domains, host)
 	}
 
@@ -81,18 +94,20 @@ const gracePriod = 5 // seconds
 // Serve incoming requests between a set of configured reverse proxies, uses
 // kernel SO_REUSEPORT which conveniently maps incoming connections to the least
 // used socket
-func (b *Proxy) Serve() {
-
-	startServer := func(s *server, wg *sync.WaitGroup) {
+func (p *Proxy) Serve() {
+	startServer := func(s *server) {
 		fmt.Println("server lisening: ", s.s.Addr)
-		log.Println(s.s.Serve(s.Listener()))
+		domains := make([]string, 0)
+		domains = append(domains, p.vhostDomains()...)
+		fmt.Println("server domains: ", domains)
+		log.Println(s.s.Serve(s.Listener(domains)))
 	}
 
 	var wg sync.WaitGroup
-	wg.Add(len(b.group.servers))
+	wg.Add(len(p.group.servers))
 
-	for _, s := range b.group.servers {
-		go startServer(s, &wg)
+	for _, s := range p.group.servers {
+		go startServer(s)
 	}
 
 	sig := make(chan os.Signal)
@@ -100,7 +115,7 @@ func (b *Proxy) Serve() {
 	<-sig
 
 	log.Println("Draining server connections...")
-	for _, s := range b.group.servers {
+	for _, s := range p.group.servers {
 		go func(srv *http.Server) {
 			ctx, cancel := context.WithTimeout(context.Background(), gracePriod*time.Second)
 			defer cancel()
@@ -113,19 +128,10 @@ func (b *Proxy) Serve() {
 	log.Println("Done, exiting")
 }
 
-func (b *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if vhost, ok := b.secure[r.Host]; ok {
-		fmt.Println(vhost, r.URL.Path)
+func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if vhost, ok := p.secure[r.Host]; ok {
+		fmt.Println(vhost, r.URL.String())
 		vhost.handler.ServeHTTP(w, r)
-		return
-	}
-
-	http.NotFound(w, r)
-}
-
-func (b *Proxy) serveInsecure(w http.ResponseWriter, r *http.Request) {
-	if s, ok := b.insecure[r.Host]; ok {
-		s.handler.ServeHTTP(w, r)
 		return
 	}
 

@@ -1,16 +1,18 @@
-clone:
-  path: golang.scot/liberty
-build:
-  image: registry.golang.scot/go:1.6
-  pull: true
-  commands:
-    - curl -sOL https://github.com/Masterminds/glide/releases/download/0.9.1/glide-0.9.1-linux-amd64.tar.gz
-    - tar -zxvf glide-0.9.1-linux-amd64.tar.gz
-    - mv linux-amd64/glide glide
-    - chmod +x glide
-    - rm -rf linux-amd64
-    - rm -f glide-0.9.1-linux-amd64.tar.gz
-    - cd balancer && ../glide install
-    - cd ../router && go test
-    - cd ../balancer && go test
-    - cd ../liberty && ../glide install  && go build .
+workspace:
+  base: /go
+  path: src/golang.scot/project
+
+
+pipeline:
+  build:
+    image: golang:${GO_VERSION}
+    environment:
+      - CGO_ENABLED=0
+    commands:
+      - go env
+      - go get -u golang.org/x/vgo
+      - vgo test ./...  && vgo build .
+
+matrix:
+  GO_VERSION:
+    - 1.10.2

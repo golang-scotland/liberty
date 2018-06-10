@@ -1,24 +1,13 @@
 package liberty
 
 import (
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
-	"crypto/tls"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
-	"os"
 	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
-
-	"golang.org/x/crypto/acme"
-	"golang.org/x/crypto/acme/autocert"
-
-	"golang.scot/liberty/env"
 )
 
 const letsEncryptSandboxUrl = "https://acme-staging.api.letsencrypt.org/directory"
@@ -120,48 +109,6 @@ func (sg *ServerGroup) Less(i, j int) bool {
 
 func (sg *ServerGroup) Swap(i, j int) {
 	sg.servers[i], sg.servers[j] = sg.servers[j], sg.servers[i]
-}
-
-func (sg *ServerGroup) setTLSConfig(domains []string) {
-
-	// Once up on a when we used to use SSL, not anymore.
-	// TODO is this not the default TLS config for go now?
-	config := &tls.Config{MinVersion: tls.VersionTLS10}
-
-	// *we* will choose...
-	// TODO do we still care about client negotiation / downgrades?
-	config.PreferServerCipherSuites = true
-
-	// Lets Encrypt!
-	m := &autocert.Manager{
-		Client:     newAcmeClient(),
-		Cache:      autocert.DirCache(os.Getenv("ACME_CACHE")),
-		Email:      os.Getenv("ACME_EMAIL"),
-		Prompt:     autocert.AcceptTOS,
-		HostPolicy: autocert.HostWhitelist(domains...),
-	}
-	config.GetCertificate = m.GetCertificate
-
-	for _, s := range sg.servers {
-		if strings.HasSuffix(s.s.Addr, ":80") {
-			continue
-		}
-		s.s.TLSConfig = config
-	}
-}
-
-func newAcmeClient() *acme.Client {
-	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		log.Fatal(err)
-	}
-	client := &acme.Client{Key: key}
-
-	if env.Get() != env.Prod {
-		client.DirectoryURL = letsEncryptSandboxUrl
-	}
-
-	return client
 }
 
 type VHost struct {

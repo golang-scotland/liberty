@@ -25,13 +25,19 @@ type ReverseProxy struct {
 	Tls           bool     `yaml:"tls"`
 	Ws            bool     `yaml:"ws"`
 	HandlerType   string   `yaml:"handlerType"`
+	GoGetOrg      string   `yaml:"goGetOrg"`
 	IPs           []string `yaml:"ips, flow"`
 	Cors          []string `yaml:"cors, flow"`
 	Servers       []*http.Server
 }
 
 func (p *ReverseProxy) hostAndPath() (host string, path string) {
+	fmt.Println("getting host and path for proxy: ", p.HostPath)
 	chunks := strings.SplitN(p.HostPath, "/", 2)
+	// if no path specified, use wildcard to serve all paths
+	if len(chunks) < 2 {
+		chunks = append(chunks, "*")
+	}
 
 	return chunks[0], "/" + chunks[1]
 }
@@ -39,15 +45,13 @@ func (p *ReverseProxy) hostAndPath() (host string, path string) {
 // Configure a proxy for use with the paramaters from the parsed yaml config. If
 // a remote host resolves to more than one IP address, we'll create a server and
 // for each. This works because under the hood we're using SO_REUSEPORT.
-func (p *ReverseProxy) Configure(whitelist []*middleware.ApiWhitelist, router http.Handler, f http.HandlerFunc) error {
+func (p *ReverseProxy) Configure(whitelist []*middleware.ApiWhitelist, router http.Handler) error {
 	p.normalise()
 	if err := p.parseRemoteHost(); err != nil {
 		return err
 	}
-	if err := p.initServers(whitelist, router, f); err != nil {
-		return err
-	}
-	return nil
+
+	return p.initServers(whitelist, router)
 }
 
 // set port and scheme defaults
@@ -102,7 +106,7 @@ func (p *ReverseProxy) parseRemoteHost() error {
 	p.remoteHostURL = remote
 
 	// now lookup the IP addresses for this, we would typically expect the remote
-	// hose name to hanve one or more IP records in DNS or /hosts
+	// hose name to have one or more IP records in DNS or /etc/hosts
 	ips, err := net.LookupIP(remoteHost)
 	if err != nil {
 		return fmt.Errorf("error in IP lookup for remote host '%s' - %s", remoteHost, err)
@@ -119,37 +123,22 @@ func (p *ReverseProxy) parseRemoteHost() error {
 		}
 		p.remoteAddrs = addrs
 	}
-	//fmt.Printf("Backend IP's for proxy: %#s\n", p.remoteAddrs)
 
 	return nil
 }
 
-func (p *ReverseProxy) initServers(whitelist []*middleware.ApiWhitelist, router http.Handler, f http.HandlerFunc) error {
+func (p *ReverseProxy) initServers(whitelist []*middleware.ApiWhitelist, router http.Handler) error {
 	s := &http.Server{
 		Addr: fmt.Sprintf("%s:80", p.HostIP),
 	}
-	s.Handler = http.HandlerFunc(f)
 	p.Servers = append(p.Servers, s)
 
-	// now the server (or servers) for this proxy entry
 	for _, addr := range p.remoteAddrs {
 		s := &http.Server{
 			Addr: fmt.Sprintf("%s:%d", p.HostIP, p.HostPort),
 		}
 
-		// if this is a websocket proxy, we need to hijack the connection. We'll
-		// have to treat this a little differently.
-		if p.Ws {
-			mux := http.NewServeMux()
-			mux.Handle(p.HostPath, middleware.WebsocketProxy(p.RemoteHost))
-			s.Handler = mux
-			p.Servers = append(p.Servers, s)
-			continue
-		}
-
 		remoteShard := strings.Replace(p.RemoteHost, p.remoteHostURL.Host, addr.String(), 1)
-		//fmt.Printf("remote shard url: %s\n", remoteShard)
-
 		err := reverseProxy(p, router, remoteShard, whitelist)
 		if err != nil {
 			return err
@@ -163,7 +152,7 @@ func (p *ReverseProxy) initServers(whitelist []*middleware.ApiWhitelist, router 
 
 // build a chain of handlers, with the last one actually performing the reverse
 // proxy to the remote resource.
-func reverseProxy(p *ReverseProxy, handler http.Handler, remoteUrl string, whitelist []*middleware.ApiWhitelist) error {
+func reverseProxy(p *ReverseProxy, handler http.Handler, remoteUrl string, whitelist []*middleware.ApiWhitelist) (err error) {
 
 	// if this remote host is not a valid resource we can't continue
 	remote, err := url.Parse(remoteUrl)
@@ -171,13 +160,7 @@ func reverseProxy(p *ReverseProxy, handler http.Handler, remoteUrl string, white
 		return fmt.Errorf("cannot parse remote url '%s' - %s", remoteUrl, err)
 	}
 
-	//fmt.Printf("reverse proxying to: %#v\n", remote)
-
-	// the first handler should be a prometheus instrumented handler
 	handlers := make([]middleware.Chainable, 0)
-
-	// @DEPRECATED https://github.com/prometheus/client_golang/issues/200
-	//handlers = append(handlers, &InstrumentedHandler{Name: p.HostPath})
 
 	// next we check for restrictions based on location / IP
 	if len(p.IPs) > 0 {
@@ -194,7 +177,6 @@ func reverseProxy(p *ReverseProxy, handler http.Handler, remoteUrl string, white
 		}
 		handlers = append(handlers, restricted)
 	}
-	// ?
 
 	// use a standard library reverse proxy, but use our own transport so that
 	// we can further update the response
@@ -205,21 +187,24 @@ func reverseProxy(p *ReverseProxy, handler http.Handler, remoteUrl string, white
 		cors: p.Cors,
 	}
 
+	// wrap the reverse proxy in a hijacker that will handle any upgrades to
+	// websocket
+	reverse := middleware.WebsocketProxy(p.RemoteHost, reverseProxy)
+
 	// now we should decided what type of resource the request is for, there's
 	// only really three basic types at the moment: web, api, metrics
 	var final http.Handler
 	switch p.HandlerType {
 	default:
-		final = middleware.BasicAuthHandler(reverseProxy)
+		final = reverse
+	case middleware.BasicAuthType:
+		final = middleware.BasicAuthHandler(reverse)
 	case middleware.ApiType:
 		handlers = append(handlers, middleware.NewApiHandler(whitelist))
-		final = middleware.BasicAuthHandler(reverseProxy)
+		final = middleware.BasicAuthHandler(reverse)
 	case middleware.GoGetType:
-		final = middleware.GoGetHandler(reverseProxy)
-	/*
-		case promHandler:
-			final = prometheus.InstrumentHandler(env.Hostname(), prometheus.Handler())
-	*/
+		gg := &middleware.GoGet{Org: p.GoGetOrg}
+		final = gg.Handler(reverse)
 	case middleware.RedirectType:
 		final = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, fmt.Sprintf("%s/%s", p.RemoteHost, r.URL.Path), 302)
@@ -234,13 +219,5 @@ func reverseProxy(p *ReverseProxy, handler http.Handler, remoteUrl string, white
 	router.All(path, chain)
 	router.NotFound = chain
 
-	if len(p.HostAlias) > 0 {
-		chunks := strings.Split(p.HostPath, ".")
-		for _, alias := range p.HostAlias {
-			chunks[0] = alias
-			router.All(strings.Join(chunks, "."), chain)
-		}
-	}
-
-	return nil
+	return err
 }
