@@ -16,3 +16,4 @@ pipeline:
 matrix:
   GO_VERSION:
     - 1.10.2
+    - 1.10.3
